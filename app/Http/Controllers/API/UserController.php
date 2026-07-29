@@ -4,6 +4,7 @@ namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
 use App\Mail\EmailVerificationMail;
+use App\Mail\ForgotPasswordMail;
 use App\Models\CreditTransaction;
 use App\Models\LoginLog;
 use App\Models\SystemSetting;
@@ -211,6 +212,83 @@ class UserController extends Controller
         $this->sendVerificationEmail($user);
 
         return response()->json(['message' => 'Email xác minh đã được gửi lại.']);
+    }
+
+    public function forgotPassword(Request $request)
+    {
+        $request->validate(['email' => 'required|email']);
+
+        $user = User::where('email', $request->email)->first();
+
+        if (!$user) {
+            return response()->json(['message' => 'Nếu email tồn tại, chúng tôi đã gửi hướng dẫn đặt lại mật khẩu.'], 200);
+        }
+
+        DB::table('password_reset_tokens')->where('email', $user->email)->delete();
+
+        $token = Str::random(64);
+        DB::table('password_reset_tokens')->insert([
+            'email' => $user->email,
+            'token' => Hash::make($token),
+            'created_at' => now(),
+        ]);
+
+        $resetUrl = url('/password/reset/' . $token . '?email=' . urlencode($user->email));
+
+        try {
+            Mail::to($user->email)->send(new ForgotPasswordMail($user, $resetUrl));
+        } catch (\Exception $e) {
+            Log::error('Failed to send password reset email: ' . $e->getMessage());
+        }
+
+        return response()->json(['message' => 'Kiểm tra email và làm theo hướng dẫn để đặt lại mật khẩu.'], 200);
+    }
+
+    public function showResetForm(Request $request, string $token)
+    {
+        $email = $request->query('email', '');
+
+        $record = DB::table('password_reset_tokens')->where('email', $email)->first();
+
+        if (!$record || !Hash::check($token, $record->token) || \Carbon\Carbon::parse($record->created_at)->addMinutes(60)->isPast()) {
+            return view('auth.reset-password', ['expired' => true]);
+        }
+
+        return view('auth.reset-password', ['token' => $token, 'email' => $email, 'expired' => false]);
+    }
+
+    public function resetPassword(Request $request)
+    {
+        $request->validate([
+            'token' => 'required|string',
+            'email' => 'required|email',
+            'password' => 'required|min:6|confirmed',
+        ]);
+
+        $record = DB::table('password_reset_tokens')->where('email', $request->email)->first();
+
+        if (!$record || !Hash::check($request->token, $record->token)) {
+            return response()->json(['error' => 'Liên kết đặt lại mật khẩu không hợp lệ hoặc đã hết hạn.'], 422);
+        }
+
+        if (\Carbon\Carbon::parse($record->created_at)->addMinutes(60)->isPast()) {
+            return response()->json(['error' => 'Liên kết đặt lại mật khẩu đã hết hạn. Vui lòng yêu cầu lại.'], 422);
+        }
+
+        $user = User::where('email', $request->email)->first();
+        if (!$user) {
+            return response()->json(['error' => 'Không tìm thấy tài khoản.'], 404);
+        }
+
+        $user->password = Hash::make($request->password);
+        $user->save();
+
+        DB::table('password_reset_tokens')->where('email', $request->email)->delete();
+
+        $user->tokens()->delete();
+        $user->increment('token_version');
+
+        return response()->json(['message' => 'Mật khẩu đã được đặt lại thành công. Vui lòng đăng nhập lại.']);
     }
 
     private function sendVerificationEmail(User $user): void
