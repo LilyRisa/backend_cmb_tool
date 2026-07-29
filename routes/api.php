@@ -10,3 +10,8 @@ Route::prefix('auth')->group(function () {
     Route::post('/login', [UserController::class, 'login']);
     Route::post('/register', [UserController::class, 'register'])->middleware('throttle:3,60');
 });
+
+Route::middleware(['auth:sanctum', 'token.version'])->group(function () {
+    Route::get('/me', [UserController::class, 'me']);
+    Route::post('/logout', [UserController::class, 'logout']);
+});

@@ -8,8 +8,10 @@ use App\Models\LoginLog;
 use App\Models\SystemSetting;
 use App\Models\User;
 use App\Services\CreditService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 
 class UserController extends Controller
 {
@@ -94,5 +96,58 @@ class UserController extends Controller
             'email_verified' => false,
             'minutes_remaining' => CreditService::creditsToMinutes($user->credits, $charsPerMinute),
         ]);
+    }
+
+    public function me(Request $request)
+    {
+        $user = $request->user();
+
+        $avatarUrl = $user->avatar
+            ? Storage::disk('public')->url($user->avatar)
+            : url('/images/defaultavatar.png');
+
+        $userData = $user->toArray();
+        $userData['avatar_url'] = $avatarUrl;
+
+        $packageType = $user->package_type ?? 'free';
+        $packageExpiresAt = $user->package_expires_at ?? null;
+
+        $isExpired = false;
+        $expiresDate = null;
+        if ($packageExpiresAt) {
+            $expiresDate = Carbon::parse($packageExpiresAt);
+            $isExpired = $expiresDate->isPast();
+        }
+
+        if ($isExpired) {
+            $userData['package_current'] = 'free';
+            $userData['package_last'] = $packageType;
+            $userData['package_expired'] = true;
+            $userData['package_time_end'] = $expiresDate->format('d/m/Y');
+            $userData['package_message'] = 'Gói ' . ucfirst($packageType) . ' của bạn đã hết hạn. Vui lòng gia hạn để tiếp tục sử dụng đầy đủ tính năng.';
+        } else {
+            $userData['package_current'] = $packageType;
+            $userData['package_last'] = $packageType;
+            $userData['package_expired'] = false;
+            $userData['package_time_end'] = $packageExpiresAt ? Carbon::parse($packageExpiresAt)->format('d/m/Y') : null;
+            $userData['package_message'] = null;
+        }
+
+        $charsPerMinute = max(SystemSetting::getCharsPerMinute(), 1);
+        $totalCredits = ($user->monthly_credits ?? 0) + ($user->purchased_credits ?? 0);
+        $userData['minutes_remaining'] = CreditService::creditsToMinutes($totalCredits, $charsPerMinute);
+        $userData['monthly_credits'] = $user->monthly_credits ?? 0;
+        $userData['purchased_credits'] = $user->purchased_credits ?? 0;
+        $userData['credits_reset_at'] = $user->credits_reset_at ? Carbon::parse($user->credits_reset_at)->toIso8601String() : null;
+        $userData['email_verified'] = $user->hasVerifiedEmail();
+
+        return response()->json($userData);
+    }
+
+    public function logout(Request $request)
+    {
+        $request->user()->currentAccessToken()->delete();
+
+        return response()->json(['message' => 'Đăng xuất thành công'], 200);
     }
 }
