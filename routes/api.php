@@ -19,4 +19,7 @@ Route::prefix('auth')->group(function () {
 Route::middleware(['auth:sanctum', 'token.version'])->group(function () {
     Route::get('/me', [UserController::class, 'me']);
     Route::post('/logout', [UserController::class, 'logout']);
+    Route::put('/account/change-password', [UserController::class, 'updatePassword']);
+    Route::put('/account/change-name', [UserController::class, 'updateName']);
+    Route::match(['put', 'post'], '/account/profile', [UserController::class, 'updateProfile']);
 });

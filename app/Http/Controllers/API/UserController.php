@@ -291,6 +291,65 @@ class UserController extends Controller
         return response()->json(['message' => 'Mật khẩu đã được đặt lại thành công. Vui lòng đăng nhập lại.']);
     }
 
+    public function updatePassword(Request $request)
+    {
+        $request->validate(['password' => 'required|min:6|confirmed']);
+
+        $user = $request->user();
+        $user->password = Hash::make($request->password);
+        $user->save();
+
+        return response()->json(['message' => 'Đổi mật khẩu thành công!']);
+    }
+
+    public function updateName(Request $request)
+    {
+        $request->validate(['name' => 'required|min:3']);
+
+        $user = $request->user();
+        $user->name = $request->name;
+        $user->save();
+
+        return response()->json(['message' => 'Cập nhật tên hiển thị thành công!', 'user' => $user->fresh()]);
+    }
+
+    public function updateProfile(Request $request)
+    {
+        $user = $request->user();
+
+        $request->validate([
+            'name' => 'nullable|string|max:255',
+            'avatar' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:2048',
+        ]);
+
+        $updateData = [];
+
+        if ($request->filled('name')) {
+            $updateData['name'] = $request->name;
+        }
+
+        if ($request->hasFile('avatar')) {
+            if ($user->avatar && Storage::disk('public')->exists($user->avatar)) {
+                Storage::disk('public')->delete($user->avatar);
+            }
+
+            $filename = $user->id . '_' . time() . '.' . $request->file('avatar')->getClientOriginalExtension();
+            $updateData['avatar'] = $request->file('avatar')->storeAs('avatars', $filename, 'public');
+        }
+
+        if (!empty($updateData)) {
+            $user->update($updateData);
+            $user = $user->fresh();
+        }
+
+        $avatarUrl = $user->avatar ? Storage::disk('public')->url($user->avatar) : null;
+
+        $userData = $user->toArray();
+        $userData['avatar_url'] = $avatarUrl;
+
+        return response()->json(['message' => 'Cập nhật thông tin thành công', 'user' => $userData]);
+    }
+
     private function sendVerificationEmail(User $user): void
     {
         DB::table('email_verification_tokens')->where('user_id', $user->id)->delete();
