@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\API\OAuthController;
 use App\Http\Controllers\API\UserController;
 use Illuminate\Support\Facades\Route;
 
@@ -13,6 +14,7 @@ Route::prefix('auth')->group(function () {
 
     Route::middleware(['auth:sanctum', 'token.version'])->group(function () {
         Route::post('/resend-verification', [UserController::class, 'resendVerification'])->middleware('throttle:3,10');
+        Route::post('/oauth/authorize', [OAuthController::class, 'authorizeClient'])->middleware('throttle:5,1');
     });
 });
 

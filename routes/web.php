@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\API\OAuthController;
 use App\Http\Controllers\API\UserController;
 use Illuminate\Support\Facades\Route;
 
@@ -22,3 +23,5 @@ Route::get('/email/verify/{token}', [UserController::class, 'verifyEmail']);
 
 Route::get('/password/reset/{token}', [UserController::class, 'showResetForm']);
 Route::post('/password/reset', [UserController::class, 'resetPassword']);
+
+Route::get('/oauth/callback', [OAuthController::class, 'callback']);
