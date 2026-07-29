@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\AdminController;
 use App\Http\Controllers\API\OAuthController;
 use App\Http\Controllers\API\UserController;
 use Illuminate\Support\Facades\Route;
@@ -25,3 +26,13 @@ Route::get('/password/reset/{token}', [UserController::class, 'showResetForm']);
 Route::post('/password/reset', [UserController::class, 'resetPassword']);
 
 Route::get('/oauth/callback', [OAuthController::class, 'callback']);
+
+Route::prefix('admin')->name('admin.')->group(function () {
+    Route::get('/login', [AdminController::class, 'showLogin'])->name('login');
+    Route::post('/login', [AdminController::class, 'login'])->name('login.submit');
+
+    Route::middleware('admin')->group(function () {
+        Route::post('/logout', [AdminController::class, 'logout'])->name('logout');
+        Route::get('/dashboard', [AdminController::class, 'dashboard'])->name('dashboard');
+    });
+});
