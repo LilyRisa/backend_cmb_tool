@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
+use App\Mail\EmailVerificationMail;
 use App\Models\CreditTransaction;
 use App\Models\LoginLog;
 use App\Models\SystemSetting;
@@ -10,8 +11,12 @@ use App\Models\User;
 use App\Services\CreditService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class UserController extends Controller
 {
@@ -89,6 +94,8 @@ class UserController extends Controller
 
         $charsPerMinute = max(SystemSetting::getCharsPerMinute(), 1);
 
+        $this->sendVerificationEmail($user);
+
         return response()->json([
             'message' => 'Register success',
             'token' => $token,
@@ -149,5 +156,82 @@ class UserController extends Controller
         $request->user()->currentAccessToken()->delete();
 
         return response()->json(['message' => 'Đăng xuất thành công'], 200);
+    }
+
+    public function verifyEmail(string $token)
+    {
+        $records = DB::table('email_verification_tokens')->get();
+
+        $matched = null;
+        foreach ($records as $record) {
+            if (Hash::check($token, $record->token)) {
+                $matched = $record;
+                break;
+            }
+        }
+
+        if (!$matched || \Carbon\Carbon::parse($matched->expires_at)->isPast()) {
+            if ($matched) DB::table('email_verification_tokens')->where('id', $matched->id)->delete();
+            return view('auth.email-verified', ['success' => false]);
+        }
+
+        $user = User::find($matched->user_id);
+        if (!$user) {
+            DB::table('email_verification_tokens')->where('id', $matched->id)->delete();
+            return view('auth.email-verified', ['success' => false]);
+        }
+
+        if (!$user->hasVerifiedEmail()) {
+            $user->email_verified_at = now();
+            $user->save();
+        }
+
+        DB::table('email_verification_tokens')->where('user_id', $matched->user_id)->delete();
+
+        return view('auth.email-verified', ['success' => true]);
+    }
+
+    public function resendVerification(Request $request)
+    {
+        $user = $request->user();
+
+        if ($user->hasVerifiedEmail()) {
+            return response()->json(['message' => 'Email đã được xác minh.', 'email_verified' => true]);
+        }
+
+        $recentToken = DB::table('email_verification_tokens')
+            ->where('user_id', $user->id)
+            ->where('created_at', '>', now()->subMinutes(2))
+            ->exists();
+
+        if ($recentToken) {
+            return response()->json(['error' => 'Vui lòng đợi 2 phút trước khi gửi lại.', 'code' => 'rate_limited'], 429);
+        }
+
+        $this->sendVerificationEmail($user);
+
+        return response()->json(['message' => 'Email xác minh đã được gửi lại.']);
+    }
+
+    private function sendVerificationEmail(User $user): void
+    {
+        DB::table('email_verification_tokens')->where('user_id', $user->id)->delete();
+
+        $token = Str::random(64);
+        DB::table('email_verification_tokens')->insert([
+            'user_id' => $user->id,
+            'token' => Hash::make($token),
+            'expires_at' => now()->addHours(24),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $verificationUrl = url('/email/verify/' . $token);
+
+        try {
+            Mail::to($user->email)->send(new EmailVerificationMail($user, $verificationUrl));
+        } catch (\Exception $e) {
+            Log::error('Failed to send verification email: ' . $e->getMessage());
+        }
     }
 }
