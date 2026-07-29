@@ -13,7 +13,9 @@ use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable implements MustVerifyEmail
 {
-    use HasApiTokens, HasFactory, Notifiable;
+    use HasApiTokens, HasFactory, Notifiable {
+        HasApiTokens::createToken as sanctumCreateToken;
+    }
 
     protected $fillable = [
         'name', 'email', 'password',
@@ -63,6 +65,24 @@ class User extends Authenticatable implements MustVerifyEmail
     public function loginLogs()
     {
         return $this->hasMany(LoginLog::class);
+    }
+
+    /**
+     * Create a new personal access token, stamping it with the user's current
+     * token_version so CheckTokenVersion can later detect that it was minted
+     * under a version that has since been superseded (e.g. by a password
+     * reset). Sanctum's own createToken() has no concept of token_version, so
+     * we let it do its normal work and then patch the version onto the row.
+     */
+    public function createToken(string $name, array $abilities = ['*'], ?\DateTimeInterface $expiresAt = null)
+    {
+        $newAccessToken = $this->sanctumCreateToken($name, $abilities, $expiresAt);
+
+        $newAccessToken->accessToken->forceFill([
+            'token_version' => $this->token_version,
+        ])->save();
+
+        return $newAccessToken;
     }
 
     public function referrer()
