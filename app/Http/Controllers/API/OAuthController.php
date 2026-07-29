@@ -7,7 +7,6 @@ use App\Models\LoginLog;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
 class OAuthController extends Controller
@@ -37,7 +36,7 @@ class OAuthController extends Controller
 
         DB::table('oauth_codes')->insert([
             'user_id' => $user->id,
-            'code' => Hash::make($plainCode),
+            'code' => hash('sha256', $plainCode),
             'client_id' => $clientId,
             'expires_at' => now()->addSeconds(60),
             'created_at' => now(),
@@ -61,18 +60,11 @@ class OAuthController extends Controller
             return $this->errorPage('Ứng dụng không hợp lệ.');
         }
 
-        $records = DB::table('oauth_codes')
+        $matched = DB::table('oauth_codes')
             ->where('client_id', $clientId)
+            ->where('code', hash('sha256', $code))
             ->where('expires_at', '>', now())
-            ->get();
-
-        $matched = null;
-        foreach ($records as $record) {
-            if (Hash::check($code, $record->code)) {
-                $matched = $record;
-                break;
-            }
-        }
+            ->first();
 
         if (!$matched) {
             DB::table('oauth_codes')->where('expires_at', '<=', now())->delete();

@@ -23,6 +23,11 @@ class UserController extends Controller
 {
     public function login(Request $request)
     {
+        $request->validate([
+            'email' => 'required|email',
+            'password' => 'required|string',
+        ]);
+
         $user = User::where('email', $request->email)->first();
 
         if (!$user || !Hash::check($request->password, $user->password)) {
@@ -55,43 +60,47 @@ class UserController extends Controller
 
         $monthlyCredits = SystemSetting::getPremiumMonthlyCredits();
 
-        $user = User::create([
-            'name' => $request->name,
-            'email' => $request->email,
-            'password' => Hash::make($request->password),
-            'token_version' => 1,
-            'package_type' => 'premium',
-            'package_expires_at' => now()->addMonth(),
-            'monthly_credits' => $monthlyCredits,
-            'purchased_credits' => 0,
-            'credits' => $monthlyCredits,
-            'credits_reset_at' => now(),
-            'referred_by' => $referrer?->id,
-        ]);
+        [$user, $token] = DB::transaction(function () use ($request, $referrer, $monthlyCredits) {
+            $user = User::create([
+                'name' => $request->name,
+                'email' => $request->email,
+                'password' => Hash::make($request->password),
+                'token_version' => 1,
+                'package_type' => 'premium',
+                'package_expires_at' => now()->addMonth(),
+                'monthly_credits' => $monthlyCredits,
+                'purchased_credits' => 0,
+                'credits' => $monthlyCredits,
+                'credits_reset_at' => now(),
+                'referred_by' => $referrer?->id,
+            ]);
 
-        CreditTransaction::create([
-            'user_id' => $user->id,
-            'type' => 'bonus',
-            'amount' => $monthlyCredits,
-            'balance_after' => $monthlyCredits,
-            'description' => "Welcome bonus - 1 tháng Premium miễn phí ({$monthlyCredits} monthly credits)",
-            'reference_type' => 'registration',
-        ]);
+            CreditTransaction::create([
+                'user_id' => $user->id,
+                'type' => 'bonus',
+                'amount' => $monthlyCredits,
+                'balance_after' => $monthlyCredits,
+                'description' => "Welcome bonus - 1 tháng Premium miễn phí ({$monthlyCredits} monthly credits)",
+                'reference_type' => 'registration',
+            ]);
 
-        if ($referrer) {
-            $referrer->addCredits(
-                800,
-                CreditTransaction::TYPE_REFERRAL,
-                "Giới thiệu thành công: {$user->name} ({$user->email})",
-                User::class,
-                $user->id,
-                'purchased'
-            );
-        }
+            if ($referrer) {
+                $referrer->addCredits(
+                    800,
+                    CreditTransaction::TYPE_REFERRAL,
+                    "Giới thiệu thành công: {$user->name} ({$user->email})",
+                    User::class,
+                    $user->id,
+                    'purchased'
+                );
+            }
 
-        $token = $user->createToken('mobile')->plainTextToken;
+            $token = $user->createToken('mobile')->plainTextToken;
 
-        LoginLog::record($user->id, LoginLog::ACTION_REGISTER, $request->ip(), $request->userAgent(), 'api');
+            LoginLog::record($user->id, LoginLog::ACTION_REGISTER, $request->ip(), $request->userAgent(), 'api');
+
+            return [$user, $token];
+        });
 
         $charsPerMinute = max(SystemSetting::getCharsPerMinute(), 1);
 
@@ -161,15 +170,9 @@ class UserController extends Controller
 
     public function verifyEmail(string $token)
     {
-        $records = DB::table('email_verification_tokens')->get();
-
-        $matched = null;
-        foreach ($records as $record) {
-            if (Hash::check($token, $record->token)) {
-                $matched = $record;
-                break;
-            }
-        }
+        $matched = DB::table('email_verification_tokens')
+            ->where('token', hash('sha256', $token))
+            ->first();
 
         if (!$matched || \Carbon\Carbon::parse($matched->expires_at)->isPast()) {
             if ($matched) DB::table('email_verification_tokens')->where('id', $matched->id)->delete();
@@ -220,8 +223,10 @@ class UserController extends Controller
 
         $user = User::where('email', $request->email)->first();
 
+        $genericMessage = 'Nếu email tồn tại, chúng tôi đã gửi hướng dẫn đặt lại mật khẩu.';
+
         if (!$user) {
-            return response()->json(['message' => 'Nếu email tồn tại, chúng tôi đã gửi hướng dẫn đặt lại mật khẩu.'], 200);
+            return response()->json(['message' => $genericMessage], 200);
         }
 
         DB::table('password_reset_tokens')->where('email', $user->email)->delete();
@@ -241,7 +246,7 @@ class UserController extends Controller
             Log::error('Failed to send password reset email: ' . $e->getMessage());
         }
 
-        return response()->json(['message' => 'Kiểm tra email và làm theo hướng dẫn để đặt lại mật khẩu.'], 200);
+        return response()->json(['message' => $genericMessage], 200);
     }
 
     public function showResetForm(Request $request, string $token)
@@ -293,11 +298,23 @@ class UserController extends Controller
 
     public function updatePassword(Request $request)
     {
-        $request->validate(['password' => 'required|min:6|confirmed']);
+        $request->validate([
+            'current_password' => 'required|string',
+            'password' => 'required|min:6|confirmed',
+        ]);
 
         $user = $request->user();
+
+        if (!Hash::check($request->current_password, $user->password)) {
+            return response()->json(['error' => 'Mật khẩu hiện tại không đúng.'], 422);
+        }
+
         $user->password = Hash::make($request->password);
         $user->save();
+
+        $currentTokenId = $request->user()->currentAccessToken()->id;
+        $user->tokens()->where('id', '!=', $currentTokenId)->delete();
+        $user->increment('token_version');
 
         return response()->json(['message' => 'Đổi mật khẩu thành công!']);
     }
@@ -333,7 +350,7 @@ class UserController extends Controller
                 Storage::disk('public')->delete($user->avatar);
             }
 
-            $filename = $user->id . '_' . time() . '.' . $request->file('avatar')->getClientOriginalExtension();
+            $filename = $user->id . '_' . time() . '_' . Str::random(6) . '.' . $request->file('avatar')->getClientOriginalExtension();
             $updateData['avatar'] = $request->file('avatar')->storeAs('avatars', $filename, 'public');
         }
 
@@ -357,7 +374,7 @@ class UserController extends Controller
         $token = Str::random(64);
         DB::table('email_verification_tokens')->insert([
             'user_id' => $user->id,
-            'token' => Hash::make($token),
+            'token' => hash('sha256', $token),
             'expires_at' => now()->addHours(24),
             'created_at' => now(),
             'updated_at' => now(),

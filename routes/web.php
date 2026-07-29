@@ -20,7 +20,7 @@ Route::get('/', function () {
     return view('welcome');
 });
 
-Route::get('/email/verify/{token}', [UserController::class, 'verifyEmail']);
+Route::get('/email/verify/{token}', [UserController::class, 'verifyEmail'])->middleware('throttle:10,1');
 
 Route::get('/password/reset/{token}', [UserController::class, 'showResetForm']);
 Route::post('/password/reset', [UserController::class, 'resetPassword']);
@@ -29,7 +29,7 @@ Route::get('/oauth/callback', [OAuthController::class, 'callback']);
 
 Route::prefix('admin')->name('admin.')->group(function () {
     Route::get('/login', [AdminController::class, 'showLogin'])->name('login');
-    Route::post('/login', [AdminController::class, 'login'])->name('login.submit');
+    Route::post('/login', [AdminController::class, 'login'])->name('login.submit')->middleware('throttle:5,1');
 
     Route::middleware('admin')->group(function () {
         Route::post('/logout', [AdminController::class, 'logout'])->name('logout');

@@ -5,7 +5,6 @@ namespace Tests\Feature\Auth;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -34,7 +33,7 @@ class EmailVerificationTest extends TestCase
 
         DB::table('email_verification_tokens')->insert([
             'user_id' => $user->id,
-            'token' => Hash::make($plainToken),
+            'token' => hash('sha256', $plainToken),
             'expires_at' => now()->addHours(24),
             'created_at' => now(),
             'updated_at' => now(),

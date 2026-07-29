@@ -14,12 +14,16 @@ class PasswordResetTest extends TestCase
 {
     use RefreshDatabase;
 
+    private const GENERIC_FORGOT_PASSWORD_MESSAGE = 'Nếu email tồn tại, chúng tôi đã gửi hướng dẫn đặt lại mật khẩu.';
+
     public function test_forgot_password_sends_email_for_existing_user(): void
     {
         Mail::fake();
         $user = User::factory()->create();
 
-        $this->postJson('/api/auth/forgot-password', ['email' => $user->email])->assertOk();
+        $this->postJson('/api/auth/forgot-password', ['email' => $user->email])
+            ->assertOk()
+            ->assertJson(['message' => self::GENERIC_FORGOT_PASSWORD_MESSAGE]);
 
         Mail::assertSent(\App\Mail\ForgotPasswordMail::class);
         $this->assertDatabaseHas('password_reset_tokens', ['email' => $user->email]);
@@ -30,7 +34,8 @@ class PasswordResetTest extends TestCase
         Mail::fake();
 
         $this->postJson('/api/auth/forgot-password', ['email' => 'nobody@example.com'])
-            ->assertOk();
+            ->assertOk()
+            ->assertJson(['message' => self::GENERIC_FORGOT_PASSWORD_MESSAGE]);
 
         Mail::assertNothingSent();
     }

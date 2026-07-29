@@ -72,4 +72,16 @@ class MeLogoutTest extends TestCase
             ->getJson('/api/me')
             ->assertStatus(401);
     }
+
+    public function test_unauthenticated_api_request_without_json_headers_returns_401_not_500(): void
+    {
+        // Deliberately using the plain get() helper (no Accept: application/json
+        // header, unlike getJson()) so $request->expectsJson() is false. There is
+        // no named "login" route in this app, so the default AuthenticationException
+        // handling used to fall through to route('login') and 500 with a
+        // RouteNotFoundException instead of returning 401.
+        $response = $this->get('/api/me');
+
+        $response->assertStatus(401);
+    }
 }
