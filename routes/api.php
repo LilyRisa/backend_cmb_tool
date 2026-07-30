@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\API\OAuthController;
+use App\Http\Controllers\API\ToolCreditController;
 use App\Http\Controllers\API\UserController;
 use Illuminate\Support\Facades\Route;
 
@@ -24,4 +25,10 @@ Route::middleware(['auth:sanctum', 'token.version'])->group(function () {
     Route::put('/account/change-password', [UserController::class, 'updatePassword']);
     Route::put('/account/change-name', [UserController::class, 'updateName']);
     Route::match(['put', 'post'], '/account/profile', [UserController::class, 'updateProfile']);
+});
+
+Route::prefix('tool')->middleware(['auth:sanctum', 'token.version'])->group(function () {
+    Route::get('/credits', [ToolCreditController::class, 'balance']);
+    Route::get('/credits/transactions', [ToolCreditController::class, 'transactions']);
+    Route::get('/credits/referral', [ToolCreditController::class, 'referralInfo']);
 });
