@@ -262,4 +262,116 @@ class GenMaxServiceTest extends TestCase
         $this->assertEquals(5, $user->monthly_credits);
         $this->assertEquals(8, $user->purchased_credits);
     }
+
+    public function test_text_to_speech_srt_pre_deducts_based_on_text_only_characters(): void
+    {
+        Http::fake(['api.genmax.io/*' => Http::response(['id' => 'genmax_srt_1'], 200)]);
+        $user = $this->premiumUser();
+        $srt = "1\n00:00:01,000 --> 00:00:02,000\nHello.\n";
+
+        $result = $this->service->textToSpeechSrt($user, 'voice_abc', $srt, []);
+
+        $this->assertTrue($result['success']);
+        $this->assertEquals(202, $result['status']);
+        $this->assertEquals(6, $result['data']['total_characters']); // "Hello." = 6 chars
+    }
+
+    public function test_text_to_speech_srt_rejects_non_premium(): void
+    {
+        $user = User::factory()->create(['package_type' => 'free']);
+
+        $result = $this->service->textToSpeechSrt($user, 'voice_abc', "1\n00:00:01,000 --> 00:00:02,000\nHi.\n", []);
+
+        $this->assertEquals(403, $result['status']);
+    }
+
+    public function test_text_to_speech_batch_creates_one_history_per_entry(): void
+    {
+        Http::fake(['api.genmax.io/*' => Http::response(['id' => 'genmax_batch_task'], 200)]);
+        $user = $this->premiumUser();
+        $entries = [
+            ['index' => 1, 'start' => '00:00:01,000', 'end' => '00:00:02,000', 'text' => 'First'],
+            ['index' => 2, 'start' => '00:00:03,000', 'end' => '00:00:04,000', 'text' => 'Second'],
+        ];
+
+        $result = $this->service->textToSpeechBatch($user, 'voice_abc', $entries, []);
+
+        $this->assertTrue($result['success']);
+        $this->assertCount(2, $result['data']['tasks']);
+        $this->assertDatabaseCount('tts_histories', 2);
+    }
+
+    public function test_text_to_speech_batch_refunds_only_failed_entries(): void
+    {
+        Http::fake([
+            'api.genmax.io/*' => Http::sequence()
+                ->push(['id' => 'ok_task'], 200)
+                ->push(['error' => 'provider rejected'], 400),
+        ]);
+        $user = $this->premiumUser();
+        $entries = [
+            ['index' => 1, 'start' => '00:00:01,000', 'end' => '00:00:02,000', 'text' => 'Good entry'],
+            ['index' => 2, 'start' => '00:00:03,000', 'end' => '00:00:04,000', 'text' => 'Bad entry'],
+        ];
+
+        $result = $this->service->textToSpeechBatch($user, 'voice_abc', $entries, []);
+
+        $this->assertEquals('failed', $result['data']['tasks'][1]['status']);
+        $this->assertGreaterThan(0, $result['data']['credits_refunded']);
+        $this->assertDatabaseCount('tts_histories', 1);
+    }
+
+    public function test_get_user_history_returns_recent_paginated_records(): void
+    {
+        $user = $this->premiumUser();
+        TtsHistory::factory()->count(3)->create(['user_id' => $user->id]);
+
+        $result = $this->service->getUserHistory($user, 30, 1);
+
+        $this->assertEquals(200, $result['status']);
+        $this->assertCount(3, $result['data']['tasks']);
+    }
+
+    public function test_delete_history_removes_record_and_calls_genmax(): void
+    {
+        Http::fake(['api.genmax.io/*' => Http::response([], 200)]);
+        $user = $this->premiumUser();
+        $history = TtsHistory::factory()->create(['user_id' => $user->id, 'genmax_task_id' => 'task_to_delete']);
+
+        $result = $this->service->deleteHistory($user, $history->id);
+
+        $this->assertEquals(200, $result['status']);
+        $this->assertDatabaseMissing('tts_histories', ['id' => $history->id]);
+    }
+
+    public function test_delete_history_404s_for_missing_or_other_users_record(): void
+    {
+        $user = $this->premiumUser();
+
+        $result = $this->service->deleteHistory($user, 999999);
+
+        $this->assertEquals(404, $result['status']);
+    }
+
+    public function test_get_models_passes_through_provider_query(): void
+    {
+        Http::fake(['api.genmax.io/*' => Http::response(['models' => ['a', 'b']], 200)]);
+
+        $result = $this->service->getModels('elevenlabs');
+
+        $this->assertTrue($result['success']);
+        Http::assertSent(fn ($request) => str_contains($request->url(), 'provider=elevenlabs'));
+    }
+
+    public function test_clone_voice_sends_multipart_request(): void
+    {
+        Http::fake(['api.genmax.io/*' => Http::response(['voice_id' => 'new_voice'], 200)]);
+
+        $result = $this->service->cloneVoice([
+            ['name' => 'voice_name', 'value' => 'My Voice'],
+        ]);
+
+        $this->assertTrue($result['success']);
+        $this->assertEquals('new_voice', $result['data']['voice_id']);
+    }
 }

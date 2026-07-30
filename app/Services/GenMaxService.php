@@ -418,4 +418,325 @@ class GenMaxService
 
         return 'tts_audio:' . md5(json_encode($parts, JSON_UNESCAPED_UNICODE));
     }
+
+    public function textToSpeechSrt(User $user, string $voiceId, string $srtContent, array $params): array
+    {
+        $textOnly = $this->extractTextFromSrt($srtContent);
+        $estimatedCredits = CreditService::calculateCredits($textOnly);
+        $totalCharacters = mb_strlen($textOnly);
+
+        if (!$user->isPremium()) {
+            return [
+                'success' => false,
+                'status' => 403,
+                'data' => ['error' => 'Tính năng này yêu cầu gói Premium. Vui lòng nâng cấp tài khoản.'],
+            ];
+        }
+
+        if ($user->credits < $estimatedCredits) {
+            return [
+                'success' => false,
+                'status' => 402,
+                'data' => [
+                    'error' => 'Không đủ thời lượng cho toàn bộ file SRT',
+                    'credits_required' => $estimatedCredits,
+                    'credits_available' => $user->credits,
+                    'total_characters' => $totalCharacters,
+                ],
+            ];
+        }
+
+        $deducted = $user->deductCredits($estimatedCredits, "TTS SRT pre-deduct: {$totalCharacters} chars", 'tts_srt', null);
+
+        if (!$deducted) {
+            return [
+                'success' => false,
+                'status' => 402,
+                'data' => ['error' => 'Không đủ credit (race condition)', 'credits_required' => $estimatedCredits, 'credits_available' => $user->credits],
+            ];
+        }
+
+        $requestBody = ['text' => $srtContent];
+        if (!empty($params['model_id'])) $requestBody['model_id'] = $params['model_id'];
+        if (!empty($params['provider'])) $requestBody['provider'] = $params['provider'];
+        if (!empty($params['language_code'])) $requestBody['language_code'] = $params['language_code'];
+
+        if (!empty($params['voice_settings'])) {
+            $requestBody['voice_settings'] = $this->sanitizeVoiceSettings($params['voice_settings'], $params['provider'] ?? 'elevenlabs');
+        }
+
+        $result = $this->request('POST', "/v1/text-to-speech/{$voiceId}", $requestBody);
+
+        if (!$result['success']) {
+            $user->addCredits($estimatedCredits, 'refund', 'TTS SRT failed — refund pre-deducted credits: ' . ($result['data']['error'] ?? 'API error'), 'tts_srt', null);
+            return $result;
+        }
+
+        $taskId = $result['data']['id'] ?? null;
+
+        $history = TtsHistory::create([
+            'user_id' => $user->id,
+            'genmax_task_id' => $taskId,
+            'provider' => $params['provider'] ?? 'elevenlabs',
+            'voice_id' => $voiceId,
+            'model_id' => $params['model_id'] ?? null,
+            'text' => $srtContent,
+            'language_code' => $params['language_code'] ?? null,
+            'voice_settings' => $params['voice_settings'] ?? null,
+            'status' => 'pending',
+            'credits_deducted_user' => $estimatedCredits,
+        ]);
+
+        return [
+            'success' => true,
+            'status' => 202,
+            'data' => [
+                'id' => $history->id,
+                'genmax_task_id' => $taskId,
+                'status' => 'pending',
+                'total_characters' => $totalCharacters,
+                'credits_deducted' => $estimatedCredits,
+            ],
+        ];
+    }
+
+    protected function extractTextFromSrt(string $srt): string
+    {
+        $srt = str_replace(["\r\n", "\r"], "\n", $srt);
+        $srt = preg_replace('/^\xEF\xBB\xBF/', '', $srt);
+
+        $blocks = preg_split('/\n\s*\n/', trim($srt));
+        $texts = [];
+
+        foreach ($blocks as $block) {
+            $lines = explode("\n", trim($block));
+            if (count($lines) < 3) continue;
+
+            $textLines = array_slice($lines, 2);
+            $text = implode(' ', array_map('trim', $textLines));
+            $text = strip_tags($text);
+            $text = preg_replace('/\s+/', ' ', trim($text));
+
+            if (!empty($text)) {
+                $texts[] = $text;
+            }
+        }
+
+        return implode(' ', $texts);
+    }
+
+    /**
+     * @deprecated Use textToSpeechSrt() instead. This method sends N individual
+     * requests which hits GenMax rate limits (40 req/min) for large SRT files.
+     * Ported as-is because ToolTtsController::generateFromSrt() still calls it.
+     */
+    public function textToSpeechBatch(User $user, string $voiceId, array $entries, array $params): array
+    {
+        $totalCharacters = 0;
+        $totalEstimatedCredits = 0;
+        foreach ($entries as $entry) {
+            $totalCharacters += mb_strlen($entry['text']);
+            $totalEstimatedCredits += CreditService::calculateCredits($entry['text']);
+        }
+
+        if (!$user->isPremium()) {
+            return [
+                'success' => false,
+                'status' => 403,
+                'data' => ['error' => 'Tính năng này yêu cầu gói Premium. Vui lòng nâng cấp tài khoản.'],
+            ];
+        }
+
+        if ($user->credits < $totalEstimatedCredits) {
+            return [
+                'success' => false,
+                'status' => 402,
+                'data' => [
+                    'error' => 'Không đủ thời lượng cho toàn bộ file SRT',
+                    'minutes_required' => CreditService::creditsToMinutes($totalEstimatedCredits, $this->charsPerMinute),
+                    'minutes_remaining' => CreditService::creditsToMinutes($user->credits, $this->charsPerMinute),
+                    'credits_required' => $totalEstimatedCredits,
+                    'credits_available' => $user->credits,
+                    'total_entries' => count($entries),
+                    'total_characters' => $totalCharacters,
+                ],
+            ];
+        }
+
+        $deducted = $user->deductCredits($totalEstimatedCredits, "TTS SRT batch pre-deduct: {$totalCharacters} chars, " . count($entries) . " entries", 'tts_batch', null);
+
+        if (!$deducted) {
+            return [
+                'success' => false,
+                'status' => 402,
+                'data' => ['error' => 'Không đủ credit (race condition)', 'credits_required' => $totalEstimatedCredits, 'credits_available' => $user->credits],
+            ];
+        }
+
+        $processedEntryIndices = [];
+        $tasks = [];
+        $creditsRefunded = 0;
+
+        try {
+            foreach ($entries as $idx => $entry) {
+                $text = $entry['text'];
+                $entryCredits = CreditService::calculateCredits($text);
+
+                $requestBody = ['text' => $text];
+                if (!empty($params['model_id'])) $requestBody['model_id'] = $params['model_id'];
+                if (!empty($params['provider'])) $requestBody['provider'] = $params['provider'];
+                if (!empty($params['language_code'])) $requestBody['language_code'] = $params['language_code'];
+
+                if (!empty($params['voice_settings'])) {
+                    $requestBody['voice_settings'] = $this->sanitizeVoiceSettings($params['voice_settings'], $params['provider'] ?? 'elevenlabs');
+                }
+
+                $result = $this->request('POST', "/v1/text-to-speech/{$voiceId}", $requestBody);
+
+                $processedEntryIndices[] = $idx;
+
+                if (!$result['success']) {
+                    $user->addCredits($entryCredits, 'refund', "TTS SRT entry #{$entry['index']} failed: " . ($result['data']['error'] ?? 'API error'), 'tts_batch', null);
+                    $creditsRefunded += $entryCredits;
+
+                    $tasks[] = [
+                        'srt_index' => $entry['index'],
+                        'srt_start' => $entry['start'],
+                        'srt_end' => $entry['end'],
+                        'status' => 'failed',
+                        'error' => $result['data']['error'] ?? 'Lỗi gửi tới nhà cung cấp',
+                        'credits_refunded' => $entryCredits,
+                    ];
+                    continue;
+                }
+
+                $taskId = $result['data']['id'] ?? null;
+
+                $history = TtsHistory::create([
+                    'user_id' => $user->id,
+                    'genmax_task_id' => $taskId,
+                    'provider' => $params['provider'] ?? 'elevenlabs',
+                    'voice_id' => $voiceId,
+                    'model_id' => $params['model_id'] ?? null,
+                    'text' => $text,
+                    'language_code' => $params['language_code'] ?? null,
+                    'voice_settings' => $params['voice_settings'] ?? null,
+                    'status' => 'pending',
+                    'credits_deducted_user' => $entryCredits,
+                ]);
+
+                $tasks[] = [
+                    'id' => $history->id,
+                    'genmax_task_id' => $taskId,
+                    'srt_index' => $entry['index'],
+                    'srt_start' => $entry['start'],
+                    'srt_end' => $entry['end'],
+                    'status' => 'pending',
+                    'credits_deducted' => $entryCredits,
+                ];
+            }
+        } catch (\Throwable $e) {
+            $remainingCredits = 0;
+            foreach ($entries as $idx => $entry) {
+                if (!in_array($idx, $processedEntryIndices)) {
+                    $remainingCredits += CreditService::calculateCredits($entry['text']);
+                }
+            }
+
+            if ($remainingCredits > 0) {
+                $user->addCredits($remainingCredits, 'refund', 'TTS SRT batch interrupted — refund unprocessed entries', 'tts_batch', null);
+                $creditsRefunded += $remainingCredits;
+            }
+
+            Log::error('TTS SRT batch interrupted', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+                'processed' => count($processedEntryIndices),
+                'total' => count($entries),
+                'credits_refunded' => $remainingCredits,
+            ]);
+        }
+
+        $actualDeducted = $totalEstimatedCredits - $creditsRefunded;
+
+        return [
+            'success' => true,
+            'status' => 202,
+            'data' => [
+                'tasks' => $tasks,
+                'total_entries' => count($entries),
+                'minutes_deducted' => CreditService::creditsToMinutes($actualDeducted, $this->charsPerMinute),
+                'total_credits_deducted' => $actualDeducted,
+                'credits_refunded' => $creditsRefunded,
+            ],
+        ];
+    }
+
+    public function getUserHistory(User $user, int $pageSize = 30, int $page = 1): array
+    {
+        $histories = TtsHistory::where('user_id', $user->id)
+            ->where('created_at', '>=', now()->subHours(48))
+            ->orderBy('created_at', 'desc')
+            ->paginate($pageSize, ['*'], 'page', $page);
+
+        return [
+            'success' => true,
+            'status' => 200,
+            'data' => [
+                'tasks' => $histories->map(fn($h) => $this->formatHistoryResponse($h))->toArray(),
+                'has_more' => $histories->hasMorePages(),
+                'total' => $histories->total(),
+                'current_page' => $histories->currentPage(),
+                'last_page' => $histories->lastPage(),
+            ],
+        ];
+    }
+
+    public function deleteHistory(User $user, int $historyId): array
+    {
+        $history = TtsHistory::where('id', $historyId)->where('user_id', $user->id)->first();
+
+        if (!$history) {
+            return ['success' => false, 'status' => 404, 'data' => ['error' => 'Không tìm thấy']];
+        }
+
+        if ($history->genmax_task_id) {
+            $this->request('DELETE', "/v1/history/{$history->genmax_task_id}");
+        }
+
+        $history->delete();
+
+        return ['success' => true, 'status' => 200, 'data' => ['message' => 'Đã xóa']];
+    }
+
+    public function getModels(?string $provider = null): array
+    {
+        $query = $provider ? ['provider' => $provider] : [];
+        return $this->request('GET', '/v1/models', [], $query);
+    }
+
+    public function getSystemVoices(array $filters = []): array
+    {
+        return $this->request('GET', '/v1/minimax/system-voices', [], $filters);
+    }
+
+    public function getSystemVoicesClone(array $filters = []): array
+    {
+        return $this->request('GET', '/v1/minimax/voices/', [], $filters);
+    }
+
+    public function getClonedVoices(): array
+    {
+        return $this->request('GET', '/v1/minimax/voices');
+    }
+
+    public function cloneVoice(array $multipart): array
+    {
+        return $this->requestMultipart('/v1/minimax/voices/clone', $multipart);
+    }
+
+    public function deleteVoice(string $voiceId): array
+    {
+        return $this->request('DELETE', "/v1/minimax/voices/{$voiceId}");
+    }
 }
