@@ -121,6 +121,18 @@ class GenMaxService
     {
         $text = $params['text'] ?? '';
 
+        // Premium gate MUST run before the cache lookup. The cache key is
+        // user-agnostic (built only from voice_id/text/params), so checking
+        // cache first would let a free-tier user receive a premium user's
+        // already-cached audio for an identical request, bypassing the paywall.
+        if (!$user->isPremium()) {
+            return [
+                'success' => false,
+                'status' => 403,
+                'data' => ['error' => 'Tính năng này yêu cầu gói Premium. Vui lòng nâng cấp tài khoản.'],
+            ];
+        }
+
         $cacheKey = $this->buildTtsCacheKey($voiceId, $params);
         $cached = Cache::get($cacheKey);
 
@@ -131,13 +143,7 @@ class GenMaxService
         $estimate = CreditService::estimate($text);
         $estimatedCredits = $estimate['credits'];
 
-        if (!$user->isPremium()) {
-            return [
-                'success' => false,
-                'status' => 403,
-                'data' => ['error' => 'Tính năng này yêu cầu gói Premium. Vui lòng nâng cấp tài khoản.'],
-            ];
-        }
+        $monthlyBeforeDeduction = $user->monthly_credits;
 
         $deducted = $user->deductCredits(
             $estimatedCredits,
@@ -175,7 +181,21 @@ class GenMaxService
         $result = $this->request('POST', "/v1/text-to-speech/{$voiceId}", $requestBody);
 
         if (!$result['success']) {
-            $user->addCredits($estimatedCredits, 'refund', 'TTS failed to submit — refund pre-deducted credits', 'tts_pre_deduct', null, 'monthly');
+            // Refund into the same pools the pre-deduction actually drew from
+            // (deductCredits() draws from monthly_credits first, then
+            // purchased_credits for any remainder) so a mixed-pool user doesn't
+            // have their purchased credits misclassified as monthly credits,
+            // which typically expire on the next monthly reset.
+            $fromMonthly = min($monthlyBeforeDeduction, $estimatedCredits);
+            $fromPurchased = $estimatedCredits - $fromMonthly;
+
+            if ($fromMonthly > 0) {
+                $user->addCredits($fromMonthly, 'refund', 'TTS failed to submit — refund pre-deducted credits', 'tts_pre_deduct', null, 'monthly');
+            }
+            if ($fromPurchased > 0) {
+                $user->addCredits($fromPurchased, 'refund', 'TTS failed to submit — refund pre-deducted credits', 'tts_pre_deduct', null, 'purchased');
+            }
+
             return $result;
         }
 
@@ -253,6 +273,19 @@ class GenMaxService
                 $diff = $preDeducted - $actualUserCredits;
 
                 if ($diff > 0) {
+                    // KNOWN LIMITATION: this refund always lands in monthly_credits.
+                    // TtsHistory does not persist how the original pre-deduction was
+                    // split between monthly_credits and purchased_credits (that split
+                    // only exists transiently inside User::deductCredits() at submit
+                    // time), and polling happens in a later, separate request — so
+                    // there is nothing to recompute the split from here. For a
+                    // mixed-pool user (some of the pre-deduction drawn from
+                    // purchased_credits), this misclassifies those purchased credits
+                    // as monthly credits, which typically expire on the next monthly
+                    // reset. See GenMaxServiceTest::test_get_task_status_refund_documents_mixed_pool_limitation
+                    // for the documented current behavior. A proper fix requires
+                    // persisting the monthly/purchased split on TtsHistory at
+                    // pre-deduction time.
                     $user->addCredits($diff, 'refund', "TTS credit adjustment (hoàn lại {$diff} credits)", 'tts_history', $history->id, 'monthly');
                     $updateData['credits_deducted_user'] = $actualUserCredits;
                 } elseif ($diff < 0) {
@@ -301,6 +334,12 @@ class GenMaxService
             $updateData['error'] = $genMaxData['error'] ?? 'Unknown error';
 
             if (!$history->is_credit_deducted && $history->credits_deducted_user > 0) {
+                // KNOWN LIMITATION: same caveat as the over-refund branch above —
+                // this always refunds into monthly_credits because the original
+                // monthly/purchased split at pre-deduction time isn't persisted on
+                // TtsHistory and can't be recovered at poll time. A mixed-pool user
+                // can have purchased credits misclassified as monthly credits here.
+                // See GenMaxServiceTest::test_get_task_status_refund_documents_mixed_pool_limitation.
                 $user->addCredits($history->credits_deducted_user, 'refund', "TTS failed - hoàn credits", 'tts_history', $history->id, 'monthly');
                 $updateData['credits_deducted_user'] = 0;
                 $updateData['is_credit_deducted'] = true;
