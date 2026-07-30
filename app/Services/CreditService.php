@@ -59,4 +59,41 @@ class CreditService
 
         return (int) ceil($charactersUsed / self::CHARS_PER_CREDIT);
     }
+
+    const FEATURE_PRICING = [
+        'create_video_script' => [
+            'credits_per_minute' => 140,
+            'max_duration_seconds' => 1200,
+        ],
+    ];
+
+    public static function calculateFeatureCredits(string $feature, int $durationSeconds): ?array
+    {
+        if (!isset(self::FEATURE_PRICING[$feature])) {
+            return null;
+        }
+
+        $pricing = self::FEATURE_PRICING[$feature];
+        $maxDuration = $pricing['max_duration_seconds'];
+
+        if ($durationSeconds < 1 || $durationSeconds > $maxDuration) {
+            throw new \InvalidArgumentException(
+                "Duration must be between 1 and {$maxDuration} seconds for feature '{$feature}'."
+            );
+        }
+
+        $minutes = ceil($durationSeconds / 60);
+        $credits = (int) ($minutes * $pricing['credits_per_minute']);
+
+        return [
+            'feature' => $feature,
+            'duration_seconds' => $durationSeconds,
+            'credits' => $credits,
+        ];
+    }
+
+    public static function getFeaturePricing(): array
+    {
+        return self::FEATURE_PRICING;
+    }
 }
