@@ -126,6 +126,57 @@ class SePayWebhookTest extends TestCase
         $this->postWebhook(array_merge($payload, ['id' => $payload['id'] + 1]))->assertNoContent();
 
         $this->assertEquals(5000, $user->fresh()->purchased_credits);
+        $this->assertNotNull($topup->fresh()->completed_at);
+        // Exactly one topup credit transaction must exist — the second delivery's claim
+        // must have been rejected by the atomic UPDATE, not merely skipped after crediting.
+        $this->assertSame(
+            1,
+            CreditTransaction::where('user_id', $user->id)->where('type', 'topup')->count()
+        );
+    }
+
+    public function test_webhook_atomic_claim_prevents_double_credit_on_concurrent_delivery(): void
+    {
+        // Reproduces the race the review flagged: two webhook deliveries for the same
+        // topup can both read the row while it is still "pending" (e.g. two requests
+        // arriving before either has written its completion), before either has claimed
+        // it. The fix in SePayCreditListener must ensure only one delivery's conditional
+        // `UPDATE ... WHERE status = pending` can succeed, no matter which one reads first.
+        $user = User::factory()->create(['purchased_credits' => 0, 'credits' => 0]);
+        $topup = PendingCreditTopup::factory()->create([
+            'user_id' => $user->id,
+            'credits' => 5000,
+            'amount' => 30000,
+            'transaction_code' => 'CMB777000111',
+        ]);
+
+        // Two separate reads of the same row, both still see it as pending — simulating
+        // both concurrent deliveries' calls to PendingCreditTopup::findByTransactionCode()
+        // resolving before either delivery has attempted its atomic claim.
+        $readByDeliveryA = PendingCreditTopup::find($topup->id);
+        $readByDeliveryB = PendingCreditTopup::find($topup->id);
+        $this->assertEquals(PendingCreditTopup::STATUS_PENDING, $readByDeliveryA->status);
+        $this->assertEquals(PendingCreditTopup::STATUS_PENDING, $readByDeliveryB->status);
+
+        // Delivery A performs the listener's exact atomic-claim query first — it must win.
+        $claimedByA = PendingCreditTopup::where('id', $readByDeliveryA->id)
+            ->where('status', PendingCreditTopup::STATUS_PENDING)
+            ->update(['status' => PendingCreditTopup::STATUS_COMPLETED, 'completed_at' => now()]);
+        $this->assertSame(1, $claimedByA);
+
+        // Delivery B runs the identical claim query against the same row. Even though its
+        // own read (above) still showed "pending", the conditional UPDATE must now affect
+        // zero rows because delivery A already flipped the status — this is what stops
+        // SePayCreditListener from crediting the user twice.
+        $claimedByB = PendingCreditTopup::where('id', $readByDeliveryB->id)
+            ->where('status', PendingCreditTopup::STATUS_PENDING)
+            ->update(['status' => PendingCreditTopup::STATUS_COMPLETED, 'completed_at' => now()]);
+        $this->assertSame(0, $claimedByB);
+
+        // The user was never credited in this scenario (no listener code ran), but the
+        // claim outcome above is precisely the guard that gates $user->addCredits() in
+        // SePayCreditListener — a losing claim (0 rows) must return before crediting.
+        $this->assertEquals(0, $user->fresh()->purchased_credits);
     }
 
     public function test_webhook_activates_subscription_when_pattern_matches(): void

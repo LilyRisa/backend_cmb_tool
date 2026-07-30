@@ -36,17 +36,21 @@ class SePayCreditListener
             return;
         }
 
-        if ($topup->status === PendingCreditTopup::STATUS_COMPLETED) {
-            Log::info('SePay credit: topup already completed', ['topup_id' => $topup->id]);
-            return;
-        }
-
         if ($data->transferAmount < $topup->amount) {
             Log::warning('SePay credit: amount mismatch', [
                 'expected' => $topup->amount,
                 'received' => $data->transferAmount,
                 'topup_id' => $topup->id,
             ]);
+            return;
+        }
+
+        $claimed = PendingCreditTopup::where('id', $topup->id)
+            ->where('status', PendingCreditTopup::STATUS_PENDING)
+            ->update(['status' => PendingCreditTopup::STATUS_COMPLETED, 'completed_at' => now()]);
+
+        if ($claimed === 0) {
+            Log::info('SePay credit: topup already completed', ['topup_id' => $topup->id]);
             return;
         }
 
@@ -64,8 +68,6 @@ class SePayCreditListener
             $topup->id,
             'purchased'
         );
-
-        $topup->markCompleted();
 
         Log::info('SePay credit: topup completed', ['topup_id' => $topup->id, 'user_id' => $user->id, 'credits' => $topup->credits]);
 
