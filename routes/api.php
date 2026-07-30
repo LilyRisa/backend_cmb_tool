@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\API\CreditTopupController;
 use App\Http\Controllers\API\OAuthController;
 use App\Http\Controllers\API\ToolCreditController;
 use App\Http\Controllers\API\UserController;
@@ -31,4 +32,8 @@ Route::prefix('tool')->middleware(['auth:sanctum', 'token.version'])->group(func
     Route::get('/credits', [ToolCreditController::class, 'balance']);
     Route::get('/credits/transactions', [ToolCreditController::class, 'transactions']);
     Route::get('/credits/referral', [ToolCreditController::class, 'referralInfo']);
+
+    Route::get('/credits/packages', [CreditTopupController::class, 'packages']);
+    Route::post('/credits/topup', [CreditTopupController::class, 'createTopup']);
+    Route::get('/credits/topup/status/{id}', [CreditTopupController::class, 'topupStatus'])->where('id', '[0-9]+');
 });
