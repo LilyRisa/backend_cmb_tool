@@ -50,18 +50,21 @@ class SystemSetting extends Model
 
     public static function getPremiumPlans(): array
     {
-        $stored = static::getValue('premium_plans');
-
-        if ($stored) {
-            $decoded = is_array($stored) ? $stored : json_decode($stored, true);
-            if (is_array($decoded)) {
-                return $decoded;
+        $raw = static::getValue('premium_plans');
+        if ($raw) {
+            $decoded = json_decode($raw, true);
+            if (is_array($decoded) && !empty($decoded)) {
+                return array_values($decoded);
             }
         }
+        return static::defaultPremiumPlans();
+    }
 
+    protected static function defaultPremiumPlans(): array
+    {
         return [
-            ['id' => 'monthly', 'name' => 'Premium - Monthly', 'price' => 99000, 'duration_days' => 30, 'monthly_credits' => 5000],
-            ['id' => 'yearly', 'name' => 'Premium - Yearly', 'price' => 990000, 'duration_days' => 365, 'monthly_credits' => 5000],
+            ['id' => 'monthly', 'name' => 'Premium Tháng', 'price' => 99000, 'duration_days' => 30, 'monthly_credits' => 5000],
+            ['id' => 'yearly', 'name' => 'Premium Năm', 'price' => 999000, 'duration_days' => 365, 'monthly_credits' => 5000],
         ];
     }
 }
