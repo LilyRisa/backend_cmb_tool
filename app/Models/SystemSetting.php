@@ -48,6 +48,21 @@ class SystemSetting extends Model
         return (int) static::getValue('premium_monthly_credits', 5000);
     }
 
+    public static function getGenMaxApiKey(): ?string
+    {
+        return static::getValue('genmax_api_key');
+    }
+
+    public static function setGenMaxApiKey(string $apiKey): static
+    {
+        return static::setValue(
+            'genmax_api_key',
+            $apiKey,
+            true,
+            'GenMax TTS Provider API Key'
+        );
+    }
+
     public static function getPremiumPlans(): array
     {
         $raw = static::getValue('premium_plans');
