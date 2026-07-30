@@ -3,6 +3,7 @@
 use App\Http\Controllers\API\CreditTopupController;
 use App\Http\Controllers\API\OAuthController;
 use App\Http\Controllers\API\ToolCreditController;
+use App\Http\Controllers\API\ToolSubscriptionController;
 use App\Http\Controllers\API\UserController;
 use Illuminate\Support\Facades\Route;
 
@@ -36,4 +37,8 @@ Route::prefix('tool')->middleware(['auth:sanctum', 'token.version'])->group(func
     Route::get('/credits/packages', [CreditTopupController::class, 'packages']);
     Route::post('/credits/topup', [CreditTopupController::class, 'createTopup']);
     Route::get('/credits/topup/status/{id}', [CreditTopupController::class, 'topupStatus'])->where('id', '[0-9]+');
+
+    Route::get('/subscription', [ToolSubscriptionController::class, 'current']);
+    Route::post('/subscription/subscribe', [ToolSubscriptionController::class, 'subscribe']);
+    Route::get('/subscription/status/{id}', [ToolSubscriptionController::class, 'status'])->where('id', '[0-9]+');
 });

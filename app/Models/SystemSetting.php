@@ -47,4 +47,21 @@ class SystemSetting extends Model
     {
         return (int) static::getValue('premium_monthly_credits', 5000);
     }
+
+    public static function getPremiumPlans(): array
+    {
+        $stored = static::getValue('premium_plans');
+
+        if ($stored) {
+            $decoded = is_array($stored) ? $stored : json_decode($stored, true);
+            if (is_array($decoded)) {
+                return $decoded;
+            }
+        }
+
+        return [
+            ['id' => 'monthly', 'name' => 'Premium - Monthly', 'price' => 99000, 'duration_days' => 30, 'monthly_credits' => 5000],
+            ['id' => 'yearly', 'name' => 'Premium - Yearly', 'price' => 990000, 'duration_days' => 365, 'monthly_credits' => 5000],
+        ];
+    }
 }
