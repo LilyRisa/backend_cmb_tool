@@ -2,11 +2,16 @@
 
 namespace App\Services;
 
+use Illuminate\Support\Str;
+
 class SePayService
 {
     public static function generateTransactionCode(int $userId, string $kind = ''): string
     {
-        $code = config('sepay.pattern', 'CMB') . $kind . $userId . time();
+        // Str::random(6) adds entropy beyond second-resolution time() so that two
+        // topup/subscribe requests from the same user within the same second don't
+        // collide on the transaction_code UNIQUE index.
+        $code = config('sepay.pattern', 'CMB') . $kind . $userId . time() . Str::random(6);
         return preg_replace('/[^A-Za-z0-9]/', '', $code);
     }
 

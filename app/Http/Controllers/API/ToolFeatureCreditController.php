@@ -66,14 +66,24 @@ class ToolFeatureCreditController extends Controller
         $user = $request->user();
         $newStatus = $request->input('status');
 
-        $usage = FeatureCreditUsage::where('id', $id)
+        $claimStatus = $newStatus === FeatureCreditUsage::STATUS_COMPLETED
+            ? FeatureCreditUsage::STATUS_COMPLETED
+            : FeatureCreditUsage::STATUS_FAILED;
+
+        // Atomic claim: only one concurrent confirm-feature call for this usage record
+        // can flip it out of "pending", mirroring the atomic-claim pattern used by
+        // SePayCreditListener/SePaySubscriptionListener. This prevents two concurrent
+        // requests from both passing a plain read-check and both deducting credits.
+        $claimed = FeatureCreditUsage::where('id', $id)
             ->where('user_id', $user->id)
             ->where('status', FeatureCreditUsage::STATUS_PENDING)
-            ->first();
+            ->update(['status' => $claimStatus]);
 
-        if (!$usage) {
+        if ($claimed === 0) {
             return response()->json(['error' => 'Pending usage record not found or already processed.'], 404);
         }
+
+        $usage = FeatureCreditUsage::where('id', $id)->where('user_id', $user->id)->first();
 
         if ($newStatus === FeatureCreditUsage::STATUS_COMPLETED) {
             $deducted = $user->deductCredits(
@@ -84,16 +94,17 @@ class ToolFeatureCreditController extends Controller
             );
 
             if (!$deducted) {
+                // We already claimed the row as "completed" above, but the deduction
+                // itself failed (a real race — should be rare since deductFeature()
+                // pre-checked). Revert the claim back to "pending" so the client can retry.
+                $usage->update(['status' => FeatureCreditUsage::STATUS_PENDING]);
+
                 return response()->json([
                     'error' => 'Insufficient credits. Cannot complete deduction.',
                     'credits_required' => $usage->credits,
                     'credits_available' => ($user->monthly_credits ?? 0) + ($user->purchased_credits ?? 0),
                 ], 402);
             }
-
-            $usage->update(['status' => FeatureCreditUsage::STATUS_COMPLETED]);
-        } else {
-            $usage->update(['status' => FeatureCreditUsage::STATUS_FAILED]);
         }
 
         $totalCredits = ($user->fresh()->monthly_credits ?? 0) + ($user->fresh()->purchased_credits ?? 0);

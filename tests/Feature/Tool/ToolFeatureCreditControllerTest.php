@@ -95,6 +95,65 @@ class ToolFeatureCreditControllerTest extends TestCase
             ->assertStatus(404);
     }
 
+    public function test_confirm_feature_second_concurrent_call_404s_and_does_not_double_deduct(): void
+    {
+        // Reproduces the same double-spend race Task 9 fixed in the SePay listeners:
+        // two concurrent confirm-feature calls on the same pending usage record must
+        // not both pass and both deduct credits. The atomic claim (conditional
+        // UPDATE ... WHERE status = pending) means only the first call can succeed.
+        $user = User::factory()->create(['monthly_credits' => 1000, 'purchased_credits' => 0, 'credits' => 1000]);
+        $usage = FeatureCreditUsage::factory()->create([
+            'user_id' => $user->id,
+            'feature' => 'create_video_script',
+            'duration_seconds' => 300,
+            'credits' => 700,
+            'status' => FeatureCreditUsage::STATUS_PENDING,
+        ]);
+
+        $headers = $this->authHeader($user);
+
+        $first = $this->withHeaders($headers)
+            ->postJson("/api/tool/credits/confirm-feature/{$usage->id}", ['status' => 'completed']);
+        $first->assertOk()->assertJsonPath('credits_deducted', true);
+
+        $second = $this->withHeaders($headers)
+            ->postJson("/api/tool/credits/confirm-feature/{$usage->id}", ['status' => 'completed']);
+        $second->assertStatus(404);
+
+        // Only one deduction happened — credits were not double-spent.
+        $this->assertEquals(300, $user->fresh()->monthly_credits);
+    }
+
+    public function test_confirm_feature_atomic_claim_only_lets_one_caller_win(): void
+    {
+        // Direct test of the claim query itself, in the same spirit as the SePay
+        // atomic-claim tests: simulate two concurrent requests both having read the
+        // row as "pending" before either has attempted its claim, then show only
+        // one of the identical conditional UPDATE queries affects a row.
+        $user = User::factory()->create();
+        $usage = FeatureCreditUsage::factory()->create([
+            'user_id' => $user->id,
+            'status' => FeatureCreditUsage::STATUS_PENDING,
+        ]);
+
+        $readByRequestA = FeatureCreditUsage::find($usage->id);
+        $readByRequestB = FeatureCreditUsage::find($usage->id);
+        $this->assertEquals(FeatureCreditUsage::STATUS_PENDING, $readByRequestA->status);
+        $this->assertEquals(FeatureCreditUsage::STATUS_PENDING, $readByRequestB->status);
+
+        $claimedByA = FeatureCreditUsage::where('id', $readByRequestA->id)
+            ->where('user_id', $user->id)
+            ->where('status', FeatureCreditUsage::STATUS_PENDING)
+            ->update(['status' => FeatureCreditUsage::STATUS_COMPLETED]);
+        $this->assertSame(1, $claimedByA);
+
+        $claimedByB = FeatureCreditUsage::where('id', $readByRequestB->id)
+            ->where('user_id', $user->id)
+            ->where('status', FeatureCreditUsage::STATUS_PENDING)
+            ->update(['status' => FeatureCreditUsage::STATUS_COMPLETED]);
+        $this->assertSame(0, $claimedByB);
+    }
+
     public function test_feature_pricing_returns_the_pricing_table(): void
     {
         $user = User::factory()->create();

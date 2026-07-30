@@ -34,6 +34,19 @@ class SePayServiceTest extends TestCase
         $this->assertStringStartsWith('CMB7', $code);
     }
 
+    public function test_generate_transaction_code_is_unique_across_immediate_successive_calls(): void
+    {
+        // Second-resolution time() alone would produce identical codes for two
+        // calls within the same second, colliding on the transaction_code UNIQUE
+        // index. Str::random(6) entropy must make them distinct.
+        $codes = [];
+        for ($i = 0; $i < 20; $i++) {
+            $codes[] = SePayService::generateTransactionCode(42, 'SUB');
+        }
+
+        $this->assertCount(20, array_unique($codes));
+    }
+
     public function test_bank_info_returns_configured_account_details(): void
     {
         $info = SePayService::bankInfo(50000, 'CMB123');

@@ -2,6 +2,8 @@
 
 namespace Tests\Feature\Console;
 
+use App\Models\PendingCreditTopup;
+use App\Models\PendingSubscriptionPayment;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -41,5 +43,53 @@ class ScheduledCleanupTest extends TestCase
 
         $this->assertDatabaseMissing('email_verification_tokens', ['token' => hash('sha256', 'expired-token')]);
         $this->assertDatabaseHas('email_verification_tokens', ['token' => hash('sha256', 'valid-token')]);
+    }
+
+    public function test_daily_schedule_expires_old_pending_credit_topups(): void
+    {
+        $user = User::factory()->create();
+
+        $old = PendingCreditTopup::factory()->create([
+            'user_id' => $user->id,
+            'status' => PendingCreditTopup::STATUS_PENDING,
+            'transaction_code' => 'CMBOLDTOPUP1',
+            'created_at' => now()->subHours(25),
+        ]);
+        $recent = PendingCreditTopup::factory()->create([
+            'user_id' => $user->id,
+            'status' => PendingCreditTopup::STATUS_PENDING,
+            'transaction_code' => 'CMBRECENTTOPUP1',
+            'created_at' => now()->subHours(1),
+        ]);
+
+        $this->travelTo(Carbon::tomorrow()->startOfDay());
+        $this->artisan('schedule:run');
+
+        $this->assertEquals(PendingCreditTopup::STATUS_EXPIRED, $old->fresh()->status);
+        $this->assertEquals(PendingCreditTopup::STATUS_PENDING, $recent->fresh()->status);
+    }
+
+    public function test_daily_schedule_expires_old_pending_subscription_payments(): void
+    {
+        $user = User::factory()->create();
+
+        $old = PendingSubscriptionPayment::factory()->create([
+            'user_id' => $user->id,
+            'status' => PendingSubscriptionPayment::STATUS_PENDING,
+            'transaction_code' => 'CMBSUBOLD1',
+            'created_at' => now()->subHours(25),
+        ]);
+        $recent = PendingSubscriptionPayment::factory()->create([
+            'user_id' => $user->id,
+            'status' => PendingSubscriptionPayment::STATUS_PENDING,
+            'transaction_code' => 'CMBSUBRECENT1',
+            'created_at' => now()->subHours(1),
+        ]);
+
+        $this->travelTo(Carbon::tomorrow()->startOfDay());
+        $this->artisan('schedule:run');
+
+        $this->assertEquals(PendingSubscriptionPayment::STATUS_EXPIRED, $old->fresh()->status);
+        $this->assertEquals(PendingSubscriptionPayment::STATUS_PENDING, $recent->fresh()->status);
     }
 }

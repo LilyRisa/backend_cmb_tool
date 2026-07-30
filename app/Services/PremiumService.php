@@ -14,6 +14,14 @@ class PremiumService
 {
     /**
      * @param array $plan keys: id, price, duration_days, monthly_credits
+     *
+     * IMPORTANT — no idempotency check of its own: this method performs NO check
+     * for whether the underlying payment has already been processed. It relies
+     * entirely on the CALLER having already atomically claimed the underlying
+     * pending record (e.g. the conditional `UPDATE ... WHERE status = pending`
+     * claim in SePaySubscriptionListener) before invoking this method. Calling
+     * activate() twice for the same logical payment will double-extend the
+     * subscription and double-grant credits.
      */
     public static function activate(User $user, array $plan, ?string $txId = null, string $method = 'sepay'): Subscription
     {

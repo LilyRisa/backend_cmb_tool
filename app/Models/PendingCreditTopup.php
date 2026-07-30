@@ -36,14 +36,14 @@ class PendingCreditTopup extends Model
 
     public static function findByTransactionCode(string $code): ?self
     {
+        // transaction_code is already stored normalized (alphanumeric-only) at
+        // creation time, so only the incoming code (from the webhook) needs
+        // normalizing here — no need to load and scan all pending rows in PHP.
         $normalized = preg_replace('/[^A-Za-z0-9]/', '', $code);
 
         return static::where('status', self::STATUS_PENDING)
-            ->get()
-            ->first(function ($topup) use ($normalized) {
-                $storedNormalized = preg_replace('/[^A-Za-z0-9]/', '', $topup->transaction_code);
-                return $storedNormalized === $normalized;
-            });
+            ->where('transaction_code', $normalized)
+            ->first();
     }
 
     public function markCompleted(): void

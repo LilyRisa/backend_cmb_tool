@@ -35,6 +35,11 @@ class CreditTopupController extends Controller
             return response()->json(['error' => 'Gói không tồn tại'], 422);
         }
 
+        if (!SePayService::hasBankConfig()) {
+            Log::error('SePay bank config missing');
+            return response()->json(['error' => 'Chưa cấu hình thanh toán. Vui lòng liên hệ admin.'], 500);
+        }
+
         $user = $request->user();
         $transactionCode = SePayService::generateTransactionCode($user->id);
 
@@ -46,11 +51,6 @@ class CreditTopupController extends Controller
             'transaction_code' => $transactionCode,
             'status' => PendingCreditTopup::STATUS_PENDING,
         ]);
-
-        if (!SePayService::hasBankConfig()) {
-            Log::error('SePay bank config missing');
-            return response()->json(['error' => 'Chưa cấu hình thanh toán. Vui lòng liên hệ admin.'], 500);
-        }
 
         return response()->json([
             'topup_id' => $topup->id,

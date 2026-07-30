@@ -70,6 +70,10 @@ class CreditTopupControllerTest extends TestCase
         $this->withHeaders($this->authHeader($user))
             ->postJson('/api/tool/credits/topup', ['package_id' => 'starter'])
             ->assertStatus(500);
+
+        // hasBankConfig() must be checked before creating the pending row, so a
+        // misconfigured deploy doesn't leave orphaned pending topups behind.
+        $this->assertDatabaseCount('pending_credit_topups', 0);
     }
 
     public function test_topup_status_returns_current_state(): void

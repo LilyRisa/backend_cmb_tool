@@ -5,6 +5,7 @@ namespace App\Listeners;
 use App\Models\CreditTransaction;
 use App\Models\PendingCreditTopup;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use SePay\SePay\Events\SePayWebhookEvent;
 
@@ -45,47 +46,53 @@ class SePayCreditListener
             return;
         }
 
-        $claimed = PendingCreditTopup::where('id', $topup->id)
-            ->where('status', PendingCreditTopup::STATUS_PENDING)
-            ->update(['status' => PendingCreditTopup::STATUS_COMPLETED, 'completed_at' => now()]);
+        // The atomic claim and the actual crediting must live in the same DB
+        // transaction: if addCredits() throws after the claim succeeds, the claim
+        // itself must roll back too (row goes back to "pending"), otherwise the row
+        // is left "completed" with nothing granted to the user and no retry path.
+        DB::transaction(function () use ($topup) {
+            $claimed = PendingCreditTopup::where('id', $topup->id)
+                ->where('status', PendingCreditTopup::STATUS_PENDING)
+                ->update(['status' => PendingCreditTopup::STATUS_COMPLETED, 'completed_at' => now()]);
 
-        if ($claimed === 0) {
-            Log::info('SePay credit: topup already completed', ['topup_id' => $topup->id]);
-            return;
-        }
+            if ($claimed === 0) {
+                Log::info('SePay credit: topup already completed', ['topup_id' => $topup->id]);
+                return;
+            }
 
-        $user = User::find($topup->user_id);
-        if (!$user) {
-            Log::error('SePay credit: user not found', ['user_id' => $topup->user_id]);
-            return;
-        }
+            $user = User::find($topup->user_id);
+            if (!$user) {
+                Log::error('SePay credit: user not found', ['user_id' => $topup->user_id]);
+                return;
+            }
 
-        $user->addCredits(
-            $topup->credits,
-            'topup',
-            "Nạp {$topup->credits} credit - Gói {$topup->package_id}",
-            PendingCreditTopup::class,
-            $topup->id,
-            'purchased'
-        );
+            $user->addCredits(
+                $topup->credits,
+                'topup',
+                "Nạp {$topup->credits} credit - Gói {$topup->package_id}",
+                PendingCreditTopup::class,
+                $topup->id,
+                'purchased'
+            );
 
-        Log::info('SePay credit: topup completed', ['topup_id' => $topup->id, 'user_id' => $user->id, 'credits' => $topup->credits]);
+            Log::info('SePay credit: topup completed', ['topup_id' => $topup->id, 'user_id' => $user->id, 'credits' => $topup->credits]);
 
-        if ($user->referred_by) {
-            $referrer = User::find($user->referred_by);
-            if ($referrer) {
-                $commission = (int) floor($topup->credits * 0.10);
-                if ($commission > 0) {
-                    $referrer->addCredits(
-                        $commission,
-                        CreditTransaction::TYPE_REFERRAL_COMMISSION,
-                        "Hoa hồng 10%: {$user->name} nạp {$topup->credits} credits",
-                        PendingCreditTopup::class,
-                        $topup->id,
-                        'purchased'
-                    );
+            if ($user->referred_by) {
+                $referrer = User::find($user->referred_by);
+                if ($referrer) {
+                    $commission = (int) floor($topup->credits * 0.10);
+                    if ($commission > 0) {
+                        $referrer->addCredits(
+                            $commission,
+                            CreditTransaction::TYPE_REFERRAL_COMMISSION,
+                            "Hoa hồng 10%: {$user->name} nạp {$topup->credits} credits",
+                            PendingCreditTopup::class,
+                            $topup->id,
+                            'purchased'
+                        );
+                    }
                 }
             }
-        }
+        });
     }
 }
