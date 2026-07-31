@@ -6,6 +6,7 @@ use App\Jobs\ProcessSrtGenerate;
 use App\Models\SrtGenerateJob;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -73,6 +74,31 @@ class ProcessSrtGenerateTest extends TestCase
         $this->assertEquals('failed', $fresh->status);
         $this->assertStringContainsString('Không đủ credit', $fresh->error);
         $this->assertEquals(1, $user->fresh()->monthly_credits);
+    }
+
+    public function test_handle_marks_failed_and_cleans_up_when_user_missing(): void
+    {
+        $user = User::factory()->create();
+        $job = SrtGenerateJob::create(['user_id' => $user->id, 'original_filename' => 'audio.mp3', 'status' => 'queued', 'stage' => 'queued']);
+        $path = $this->makeTempAudioFile();
+
+        // Simulate the user having been deleted between dispatch and processing.
+        // The srt_generate_jobs.user_id column has an "on delete cascade" FK, so
+        // a normal delete would cascade and remove the job row too. Disable FK
+        // enforcement for the delete so the job row is left dangling, pointing
+        // at a user_id that no longer resolves via the belongsTo relation.
+        DB::statement('PRAGMA foreign_keys = OFF');
+        User::where('id', $user->id)->delete();
+        DB::statement('PRAGMA foreign_keys = ON');
+
+        $this->assertNull($job->fresh()->user);
+
+        (new ProcessSrtGenerate($job, $path, 'audio.mp3', null))->handle(app(\App\Services\GroqService::class));
+
+        $fresh = $job->fresh();
+        $this->assertEquals('failed', $fresh->status);
+        $this->assertStringContainsString('User not found', $fresh->error);
+        $this->assertFileDoesNotExist($path);
     }
 
     public function test_failed_method_marks_job_as_permanently_failed(): void

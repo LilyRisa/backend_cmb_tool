@@ -45,6 +45,7 @@ class ProcessSrtGenerate implements ShouldQueue
 
         if (!$user) {
             $job->update(['status' => 'failed', 'error' => 'User not found']);
+            $this->cleanup();
             return;
         }
 
