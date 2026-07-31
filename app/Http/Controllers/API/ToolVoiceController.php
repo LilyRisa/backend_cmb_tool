@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
+use App\Models\VoiceClone;
 use App\Services\GenMaxService;
 use Illuminate\Http\Request;
 
@@ -42,11 +43,38 @@ class ToolVoiceController extends Controller
     {
         $result = $this->genMax->getClonedVoices();
 
+        // All users share one GenMax provider account (a single admin-configured
+        // API key), so the raw provider response is account-wide and contains
+        // every user's cloned voices. Filter it down to only the voices this
+        // caller owns per our local VoiceClone ownership table before it ever
+        // leaves this endpoint — otherwise any authenticated user could
+        // enumerate other users' cloned voices.
+        if ($result['success'] && isset($result['data']['voices']) && is_array($result['data']['voices'])) {
+            $ownedVoiceIds = VoiceClone::where('user_id', $request->user()->id)
+                ->pluck('provider_voice_id')
+                ->all();
+
+            $result['data']['voices'] = array_values(array_filter(
+                $result['data']['voices'],
+                function ($voice) use ($ownedVoiceIds) {
+                    $voiceId = is_array($voice) ? ($voice['voice_id'] ?? $voice['id'] ?? null) : null;
+
+                    return $voiceId !== null && in_array($voiceId, $ownedVoiceIds, true);
+                }
+            ));
+        }
+
         return response()->json($result['data'], $result['status']);
     }
 
     public function clone(Request $request)
     {
+        if (!$request->user()->isPremium()) {
+            return response()->json([
+                'error' => 'Tính năng này yêu cầu gói Premium. Vui lòng nâng cấp tài khoản.',
+            ], 403);
+        }
+
         $request->validate([
             'file' => 'required|file|max:20480|mimes:mp3,wav,m4a,ogg,flac,mp4,webm',
             'voice_name' => 'required|string|max:255',
@@ -59,9 +87,10 @@ class ToolVoiceController extends Controller
         $multipart = [];
 
         $file = $request->file('file');
+        $handle = fopen($file->getRealPath(), 'r');
         $multipart[] = [
             'name' => 'file',
-            'file' => fopen($file->getRealPath(), 'r'),
+            'file' => $handle,
             'filename' => $file->getClientOriginalName(),
         ];
 
@@ -72,14 +101,56 @@ class ToolVoiceController extends Controller
             }
         }
 
-        $result = $this->genMax->cloneVoice($multipart);
+        try {
+            $result = $this->genMax->cloneVoice($multipart);
+        } finally {
+            // Http::attach() hands the raw resource off to Guzzle, which wraps it
+            // in a PSR-7 stream that closes it on destruction — but Guzzle's
+            // client/handler stack holds closures that can form reference
+            // cycles, so that destruction isn't guaranteed to happen right after
+            // the request completes. Close explicitly to avoid leaking file
+            // descriptors on high-volume voice cloning.
+            if (is_resource($handle)) {
+                fclose($handle);
+            }
+        }
+
+        if ($result['success']) {
+            $voiceId = $result['data']['voice_id'] ?? null;
+
+            if ($voiceId) {
+                VoiceClone::create([
+                    'user_id' => $request->user()->id,
+                    'provider_voice_id' => $voiceId,
+                    'voice_name' => $request->input('voice_name'),
+                ]);
+            }
+        }
 
         return response()->json($result['data'], $result['status']);
     }
 
     public function delete(Request $request, string $id)
     {
+        // Scope deletion to voices this caller actually cloned. All users share
+        // one GenMax provider account, so without this check any caller could
+        // pass through an arbitrary provider voice ID and delete another
+        // user's cloned voice (cross-tenant IDOR). Return a plain 404 rather
+        // than a 403 so we don't leak whether the voice exists at all for
+        // another user.
+        $voiceClone = VoiceClone::where('provider_voice_id', $id)
+            ->where('user_id', $request->user()->id)
+            ->first();
+
+        if (!$voiceClone) {
+            return response()->json(['error' => 'Không tìm thấy'], 404);
+        }
+
         $result = $this->genMax->deleteVoice($id);
+
+        if ($result['success']) {
+            $voiceClone->delete();
+        }
 
         return response()->json($result['data'], $result['status']);
     }

@@ -6,6 +6,7 @@ use App\Models\SystemSetting;
 use App\Models\TtsHistory;
 use App\Models\User;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -39,10 +40,6 @@ class GenMaxService
 
     protected function request(string $method, string $endpoint, array $data = [], array $query = [])
     {
-        $request = Http::withHeaders([
-            'xi-api-key' => $this->getApiKey(),
-        ])->timeout(30);
-
         $url = $this->baseUrl . $endpoint;
 
         if (!empty($query)) {
@@ -50,6 +47,20 @@ class GenMaxService
         }
 
         try {
+            // getApiKey() must be called INSIDE the try block: it throws
+            // \RuntimeException when no key is configured, and this method is
+            // called from textToSpeech()/textToSpeechSrt() AFTER credits have
+            // already been pre-deducted. If the exception escaped uncaught, the
+            // caller's `if (!$result['success'])` refund path would never run,
+            // leaving the user's credits deducted with no refund. Catching it
+            // here (\RuntimeException extends \Exception, so the existing catch
+            // below already handles it) converts it into the same
+            // ['success' => false, ...] shape as any other provider failure, so
+            // the existing refund-on-failure logic handles it for free.
+            $request = Http::withHeaders([
+                'xi-api-key' => $this->getApiKey(),
+            ])->timeout(30);
+
             $response = match (strtoupper($method)) {
                 'GET' => $request->get($url),
                 'POST' => $request->post($url, $data),
@@ -268,7 +279,25 @@ class GenMaxService
                 ?? $genMaxData['output']['audio_url']
                 ?? null;
 
-            if (!$history->is_credit_deducted) {
+            // Atomically claim the credit reconciliation for this history row.
+            // The read of $history, this guard, and the eventual $history->update()
+            // below are separated by the slow provider HTTP call above (no lock,
+            // no transaction), so two overlapping polls for the same task could
+            // otherwise both observe is_credit_deducted === false (each from its
+            // own TtsHistory::first() at the top of this method) and both mutate
+            // credits. A single conditional UPDATE is atomic at the storage layer
+            // (it locks/re-reads the row's current committed value, not a stale
+            // snapshot) — only the request whose UPDATE actually flips the flag
+            // (1 row affected) is allowed to proceed with the credit mutation.
+            $reconciledCredits = DB::transaction(function () use ($history, $user, $actualUserCredits) {
+                $claimed = TtsHistory::where('id', $history->id)
+                    ->where('is_credit_deducted', false)
+                    ->update(['is_credit_deducted' => true]);
+
+                if ($claimed !== 1) {
+                    return null;
+                }
+
                 $preDeducted = $history->credits_deducted_user;
                 $diff = $preDeducted - $actualUserCredits;
 
@@ -287,62 +316,86 @@ class GenMaxService
                     // persisting the monthly/purchased split on TtsHistory at
                     // pre-deduction time.
                     $user->addCredits($diff, 'refund', "TTS credit adjustment (hoàn lại {$diff} credits)", 'tts_history', $history->id, 'monthly');
-                    $updateData['credits_deducted_user'] = $actualUserCredits;
-                } elseif ($diff < 0) {
+                    return $actualUserCredits;
+                }
+
+                if ($diff < 0) {
                     $chargeSuccess = $user->deductCredits(abs($diff), "TTS credit adjustment (trừ thêm " . abs($diff) . " credits)", 'tts_history', $history->id);
 
                     if ($chargeSuccess) {
-                        $updateData['credits_deducted_user'] = $actualUserCredits;
-                    } else {
-                        Log::warning('TTS underpayment charge failed — user has insufficient credits', [
-                            'user_id' => $user->id,
-                            'history_id' => $history->id,
-                            'pre_deducted' => $preDeducted,
-                            'actual_required' => $actualUserCredits,
-                            'shortfall' => abs($diff),
-                        ]);
-                        $updateData['credits_deducted_user'] = $preDeducted;
+                        return $actualUserCredits;
                     }
-                } else {
-                    $updateData['credits_deducted_user'] = $actualUserCredits;
+
+                    Log::warning('TTS underpayment charge failed — user has insufficient credits', [
+                        'user_id' => $user->id,
+                        'history_id' => $history->id,
+                        'pre_deducted' => $preDeducted,
+                        'actual_required' => $actualUserCredits,
+                        'shortfall' => abs($diff),
+                    ]);
+                    return $preDeducted;
                 }
 
+                return $actualUserCredits;
+            });
+
+            if ($reconciledCredits !== null) {
+                $updateData['credits_deducted_user'] = $reconciledCredits;
                 $updateData['is_credit_deducted'] = true;
 
-                $ttsCacheKey = $this->buildTtsCacheKey($history->voice_id, [
-                    'text' => $history->text,
-                    'model_id' => $history->model_id,
-                    'provider' => $history->provider,
-                    'language_code' => $history->language_code,
-                    'voice_settings' => $history->voice_settings,
-                ]);
+                // Only cache a "completed" response when it actually carries a
+                // playable audio URL. Caching a null-audio_url response would
+                // poison every identical subsequent request with the same
+                // no-audio "completed" result for the full 5-hour TTL, with no
+                // way to retry.
+                if ($updateData['audio_url'] !== null) {
+                    $ttsCacheKey = $this->buildTtsCacheKey($history->voice_id, [
+                        'text' => $history->text,
+                        'model_id' => $history->model_id,
+                        'provider' => $history->provider,
+                        'language_code' => $history->language_code,
+                        'voice_settings' => $history->voice_settings,
+                    ]);
 
-                Cache::put($ttsCacheKey, [
-                    'id' => $history->id,
-                    'status' => 'completed',
-                    'audio_url' => $updateData['audio_url'],
-                    'cached' => true,
-                    'cached_at' => now()->toIso8601String(),
-                    'characters_used' => $updateData['characters_used'] ?? 0,
-                    'credits_deducted' => 0,
-                    'minutes_deducted' => 0,
-                ], self::TTS_CACHE_TTL);
+                    Cache::put($ttsCacheKey, [
+                        'id' => $history->id,
+                        'status' => 'completed',
+                        'audio_url' => $updateData['audio_url'],
+                        'cached' => true,
+                        'cached_at' => now()->toIso8601String(),
+                        'characters_used' => $updateData['characters_used'] ?? 0,
+                        'credits_deducted' => 0,
+                        'minutes_deducted' => 0,
+                    ], self::TTS_CACHE_TTL);
+                }
             }
         }
 
         if ($newStatus === 'failed') {
             $updateData['error'] = $genMaxData['error'] ?? 'Unknown error';
 
-            if (!$history->is_credit_deducted && $history->credits_deducted_user > 0) {
-                // KNOWN LIMITATION: same caveat as the over-refund branch above —
-                // this always refunds into monthly_credits because the original
-                // monthly/purchased split at pre-deduction time isn't persisted on
-                // TtsHistory and can't be recovered at poll time. A mixed-pool user
-                // can have purchased credits misclassified as monthly credits here.
-                // See GenMaxServiceTest::test_get_task_status_refund_documents_mixed_pool_limitation.
-                $user->addCredits($history->credits_deducted_user, 'refund', "TTS failed - hoàn credits", 'tts_history', $history->id, 'monthly');
-                $updateData['credits_deducted_user'] = 0;
-                $updateData['is_credit_deducted'] = true;
+            if ($history->credits_deducted_user > 0) {
+                // Same atomic-claim protection as the completed branch above —
+                // only the request that actually flips is_credit_deducted from
+                // false to true (via this conditional UPDATE) is allowed to
+                // refund credits.
+                $claimed = DB::transaction(function () use ($history) {
+                    return TtsHistory::where('id', $history->id)
+                        ->where('is_credit_deducted', false)
+                        ->update(['is_credit_deducted' => true]) === 1;
+                });
+
+                if ($claimed) {
+                    // KNOWN LIMITATION: same caveat as the over-refund branch above —
+                    // this always refunds into monthly_credits because the original
+                    // monthly/purchased split at pre-deduction time isn't persisted on
+                    // TtsHistory and can't be recovered at poll time. A mixed-pool user
+                    // can have purchased credits misclassified as monthly credits here.
+                    // See GenMaxServiceTest::test_get_task_status_refund_documents_mixed_pool_limitation.
+                    $user->addCredits($history->credits_deducted_user, 'refund', "TTS failed - hoàn credits", 'tts_history', $history->id, 'monthly');
+                    $updateData['credits_deducted_user'] = 0;
+                    $updateData['is_credit_deducted'] = true;
+                }
             }
         }
 

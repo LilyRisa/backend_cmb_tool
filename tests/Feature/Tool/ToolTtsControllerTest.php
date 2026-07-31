@@ -113,4 +113,22 @@ class ToolTtsControllerTest extends TestCase
 
         $this->assertDatabaseMissing('tts_histories', ['id' => $history->id]);
     }
+
+    public function test_status_returns_404_not_500_for_non_numeric_id(): void
+    {
+        $user = $this->premiumUser();
+
+        $this->withHeaders($this->authHeader($user))
+            ->getJson('/api/tool/tts/status/not-a-number')
+            ->assertStatus(404);
+    }
+
+    public function test_delete_history_returns_404_not_500_for_non_numeric_id(): void
+    {
+        $user = $this->premiumUser();
+
+        $this->withHeaders($this->authHeader($user))
+            ->deleteJson('/api/tool/tts/history/not-a-number')
+            ->assertStatus(404);
+    }
 }

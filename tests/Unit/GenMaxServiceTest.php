@@ -5,8 +5,10 @@ namespace Tests\Unit;
 use App\Models\SystemSetting;
 use App\Models\TtsHistory;
 use App\Models\User;
+use App\Services\CreditService;
 use App\Services\GenMaxService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -464,5 +466,239 @@ class GenMaxServiceTest extends TestCase
 
         $this->assertTrue($result['success']);
         $this->assertEquals('new_voice', $result['data']['voice_id']);
+    }
+
+    public function test_get_task_status_reconciliation_refunds_failed_task_exactly_once_under_overlapping_polls(): void
+    {
+        // Reproduces the race the reviewer proved exploitable: the read of
+        // $history, the is_credit_deducted guard, and the eventual
+        // $history->update() are separated by a slow provider HTTP call with no
+        // lock/transaction. Two overlapping polls for the same task could both
+        // observe is_credit_deducted === false (each from its own independent
+        // TtsHistory::first() at the top of getTaskStatus()) and both refund.
+        //
+        // We simulate the overlap deterministically in this single-threaded test
+        // by making the FIRST poll's provider HTTP call itself trigger a second,
+        // fully-independent getTaskStatus() call for the same history row before
+        // the first poll continues — i.e. the "second request" genuinely runs
+        // (and commits its own reconciliation) while the first request's
+        // in-memory $history object is still holding the stale pre-poll state.
+        $user = $this->premiumUser();
+        $history = TtsHistory::factory()->create([
+            'user_id' => $user->id,
+            'genmax_task_id' => 'genmax_race_failed',
+            'credits_deducted_user' => 15,
+            'status' => 'pending',
+            'is_credit_deducted' => false,
+        ]);
+        $user->decrement('monthly_credits', 15);
+
+        $service = new class extends GenMaxService {
+            public $onFirstRequest = null;
+            private int $calls = 0;
+
+            protected function request(string $method, string $endpoint, array $data = [], array $query = [])
+            {
+                $this->calls++;
+                if ($this->calls === 1 && $this->onFirstRequest) {
+                    ($this->onFirstRequest)();
+                }
+
+                return [
+                    'success' => true,
+                    'status' => 200,
+                    'data' => ['status' => 'failed', 'error' => 'synthesis error'],
+                    'headers' => [],
+                ];
+            }
+        };
+
+        $service->onFirstRequest = function () use ($service, $user, $history) {
+            $service->getTaskStatus($user->fresh(), $history->id);
+        };
+
+        $service->getTaskStatus($user->fresh(), $history->id);
+
+        // Only ONE of the two overlapping polls may refund the 15 pre-deducted
+        // credits. 1000 - 15 (pre-deduct) + 15 (single refund) = 1000, not 1015.
+        $this->assertEquals(1000, $user->fresh()->monthly_credits);
+        $this->assertEquals(0, $history->fresh()->credits_deducted_user);
+        $this->assertTrue($history->fresh()->is_credit_deducted);
+    }
+
+    public function test_get_task_status_reconciliation_adjusts_completed_task_exactly_once_under_overlapping_polls(): void
+    {
+        // Same race as the failed-task test above, but for the completed path's
+        // over-refund branch (diff > 0).
+        $user = $this->premiumUser();
+        $history = TtsHistory::factory()->create([
+            'user_id' => $user->id,
+            'genmax_task_id' => 'genmax_race_completed',
+            'text' => str_repeat('a', 100),
+            'credits_deducted_user' => 15,
+            'status' => 'pending',
+            'is_credit_deducted' => false,
+        ]);
+        $user->decrement('monthly_credits', 15);
+
+        $service = new class extends GenMaxService {
+            public $onFirstRequest = null;
+            private int $calls = 0;
+
+            protected function request(string $method, string $endpoint, array $data = [], array $query = [])
+            {
+                $this->calls++;
+                if ($this->calls === 1 && $this->onFirstRequest) {
+                    ($this->onFirstRequest)();
+                }
+
+                return [
+                    'success' => true,
+                    'status' => 200,
+                    'data' => [
+                        'status' => 'completed',
+                        'progress' => 100,
+                        'characters_used' => 50,
+                        'result' => ['audio_url' => 'https://cdn.genmax.io/audio/race.mp3'],
+                    ],
+                    'headers' => [],
+                ];
+            }
+        };
+
+        $service->onFirstRequest = function () use ($service, $user, $history) {
+            $service->getTaskStatus($user->fresh(), $history->id);
+        };
+
+        $service->getTaskStatus($user->fresh(), $history->id);
+
+        // characters_used=50 => actual credits = ceil(50/10) = 5. Pre-deducted
+        // was 15, so a single reconciliation refunds 10 (15 - 5). If both
+        // overlapping polls reconciled, the refund would be doubled (20).
+        $this->assertEquals(995, $user->fresh()->monthly_credits); // 1000 - 15 + 10
+        $this->assertEquals(5, $history->fresh()->credits_deducted_user);
+    }
+
+    public function test_text_to_speech_with_missing_api_key_returns_clean_failure_and_refunds_credits(): void
+    {
+        // getApiKey() throws \RuntimeException when unconfigured. It's called
+        // from inside request(), AFTER textToSpeech() has already pre-deducted
+        // credits. If the exception escaped request()'s try/catch uncaught, the
+        // caller's `if (!$result['success'])` refund path would never run,
+        // leaving the user's credits deducted with no refund.
+        Cache::forget('system_setting.genmax_api_key');
+        SystemSetting::where('key', 'genmax_api_key')->delete();
+
+        $user = $this->premiumUser();
+
+        $result = $this->service->textToSpeech($user, 'voice_abc', ['text' => 'Hello world']);
+
+        $this->assertFalse($result['success']);
+        $this->assertEquals(500, $result['status']);
+        $this->assertEquals(1000, $user->fresh()->monthly_credits);
+        $this->assertEquals(1000, $user->fresh()->credits);
+    }
+
+    public function test_get_task_status_charges_additional_credits_when_actual_usage_exceeds_estimate(): void
+    {
+        // Covers the under-charge ($diff < 0) branch: actual provider usage
+        // exceeds the pre-deducted estimate, so the user is charged the
+        // difference rather than refunded.
+        $user = $this->premiumUser();
+        $history = TtsHistory::factory()->create([
+            'user_id' => $user->id,
+            'genmax_task_id' => 'genmax_undercharge',
+            'text' => str_repeat('a', 50),
+            'credits_deducted_user' => 5,
+            'status' => 'pending',
+        ]);
+        $user->decrement('monthly_credits', 5);
+
+        Http::fake([
+            'api.genmax.io/*' => Http::response([
+                'status' => 'completed',
+                'progress' => 100,
+                'characters_used' => 200,
+                'result' => ['audio_url' => 'https://cdn.genmax.io/audio/undercharge.mp3'],
+            ], 200),
+        ]);
+
+        $result = $this->service->getTaskStatus($user, $history->id);
+
+        $actualCredits = CreditService::charactersToCredits(200);
+        $this->assertEquals(200, $result['status']);
+        $this->assertEquals($actualCredits, $result['data']['credits_deducted_user']);
+        $this->assertTrue($history->fresh()->is_credit_deducted);
+        // 1000 - 5 (pre-deduct) - 15 (additional charge for 20 - 5) = 980.
+        $this->assertEquals(1000 - $actualCredits, $user->fresh()->monthly_credits);
+    }
+
+    public function test_full_lifecycle_exact_final_balance_after_submit_and_completion(): void
+    {
+        Http::fake([
+            'api.genmax.io/*' => Http::sequence()
+                ->push(['id' => 'genmax_lifecycle'], 200)
+                ->push([
+                    'status' => 'completed',
+                    'progress' => 100,
+                    'characters_used' => 33,
+                    'result' => ['audio_url' => 'https://cdn.genmax.io/audio/lifecycle.mp3'],
+                ], 200),
+        ]);
+        $user = $this->premiumUser(['monthly_credits' => 1000, 'purchased_credits' => 0, 'credits' => 1000]);
+
+        // 33 chars => ceil(33/10) = 4 credits estimated & pre-deducted.
+        $text = str_repeat('a', 33);
+        $submit = $this->service->textToSpeech($user, 'voice_abc', ['text' => $text]);
+        $this->assertTrue($submit['success']);
+        $user->refresh();
+        $this->assertEquals(996, $user->monthly_credits);
+        $this->assertEquals(996, $user->credits);
+
+        // Provider reports 33 characters_used => same 4 credits actually owed,
+        // no adjustment needed.
+        $status = $this->service->getTaskStatus($user, $submit['data']['id']);
+        $this->assertEquals('completed', $status['data']['status']);
+        $this->assertEquals('https://cdn.genmax.io/audio/lifecycle.mp3', $status['data']['audio_url']);
+
+        $user->refresh();
+        $this->assertEquals(996, $user->monthly_credits);
+        $this->assertEquals(996, $user->credits);
+        $this->assertEquals(0, $user->purchased_credits);
+    }
+
+    public function test_get_task_status_does_not_cache_completed_response_with_no_audio_url(): void
+    {
+        $user = $this->premiumUser();
+        $history = TtsHistory::factory()->create([
+            'user_id' => $user->id,
+            'genmax_task_id' => 'genmax_no_audio',
+            'text' => 'Hello world',
+            'credits_deducted_user' => 10,
+            'status' => 'pending',
+        ]);
+
+        Http::fake([
+            'api.genmax.io/*' => Http::response([
+                'status' => 'completed',
+                'progress' => 100,
+                'characters_used' => 11,
+                // No audio_url anywhere in the response.
+            ], 200),
+        ]);
+
+        $this->service->getTaskStatus($user, $history->id);
+
+        $cacheKey = (new \ReflectionClass($this->service))->getMethod('buildTtsCacheKey');
+        $cacheKey->setAccessible(true);
+        $key = $cacheKey->invoke($this->service, $history->voice_id, [
+            'text' => $history->text,
+            'model_id' => $history->model_id,
+            'provider' => $history->provider,
+            'language_code' => $history->language_code,
+            'voice_settings' => $history->voice_settings,
+        ]);
+
+        $this->assertNull(Cache::get($key));
     }
 }

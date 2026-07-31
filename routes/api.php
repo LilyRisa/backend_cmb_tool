@@ -50,15 +50,21 @@ Route::prefix('tool')->middleware(['auth:sanctum', 'token.version'])->group(func
     Route::get('/credits/feature-pricing', [ToolFeatureCreditController::class, 'featurePricing']);
 
     Route::post('/tts/srt/{voice_id}', [ToolTtsController::class, 'generateFromSrt'])->middleware(['throttle:5,1,tts-srt', 'email.verified']);
-    Route::get('/tts/status/{id}', [ToolTtsController::class, 'status']);
+    Route::get('/tts/status/{id}', [ToolTtsController::class, 'status'])->where('id', '[0-9]+');
     Route::get('/tts/history', [ToolTtsController::class, 'history']);
-    Route::delete('/tts/history/{id}', [ToolTtsController::class, 'deleteHistory']);
-    Route::post('/tts/{voice_id}', [ToolTtsController::class, 'generate'])->where('voice_id', '^(?!srt$).+')->middleware('email.verified');
+    Route::delete('/tts/history/{id}', [ToolTtsController::class, 'deleteHistory'])->where('id', '[0-9]+');
+    // [^/]+ (not .+) is deliberate: a bare .+ matches slashes too, so it would
+    // greedily swallow multi-segment sibling paths like tts/status/{id} or
+    // tts/history/{id} whenever their own {id} constraint fails to match
+    // (e.g. a non-numeric id) — Laravel then reports 405 Method Not Allowed
+    // for those paths under other verbs instead of a clean 404, since this
+    // route's URI pattern still "matches" for POST.
+    Route::post('/tts/{voice_id}', [ToolTtsController::class, 'generate'])->where('voice_id', '^(?!srt$)[^/]+')->middleware('email.verified');
 
     Route::get('/models', [ToolVoiceController::class, 'models']);
     Route::get('/voice-system-clone', [ToolVoiceController::class, 'system_clone']);
     Route::get('/voices/system', [ToolVoiceController::class, 'systemVoices']);
     Route::get('/voices/cloned', [ToolVoiceController::class, 'clonedVoices']);
-    Route::post('/voices/clone', [ToolVoiceController::class, 'clone']);
+    Route::post('/voices/clone', [ToolVoiceController::class, 'clone'])->middleware(['throttle:5,1,voice-clone', 'email.verified']);
     Route::delete('/voices/{id}', [ToolVoiceController::class, 'delete']);
 });
