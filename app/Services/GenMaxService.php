@@ -446,6 +446,12 @@ class GenMaxService
             ];
         }
 
+        // Snapshot the monthly balance immediately before deductCredits() draws it
+        // down, so a submit-failure refund below can be split back into the same
+        // monthly/purchased pools it was drawn from (deductCredits() draws from
+        // monthly_credits first, then purchased_credits for any remainder).
+        $monthlyBeforeDeduction = $user->monthly_credits;
+
         $deducted = $user->deductCredits($estimatedCredits, "TTS SRT pre-deduct: {$totalCharacters} chars", 'tts_srt', null);
 
         if (!$deducted) {
@@ -468,7 +474,16 @@ class GenMaxService
         $result = $this->request('POST', "/v1/text-to-speech/{$voiceId}", $requestBody);
 
         if (!$result['success']) {
-            $user->addCredits($estimatedCredits, 'refund', 'TTS SRT failed — refund pre-deducted credits: ' . ($result['data']['error'] ?? 'API error'), 'tts_srt', null);
+            $fromMonthly = min($monthlyBeforeDeduction, $estimatedCredits);
+            $fromPurchased = $estimatedCredits - $fromMonthly;
+
+            if ($fromMonthly > 0) {
+                $user->addCredits($fromMonthly, 'refund', 'TTS SRT failed — refund pre-deducted credits: ' . ($result['data']['error'] ?? 'API error'), 'tts_srt', null, 'monthly');
+            }
+            if ($fromPurchased > 0) {
+                $user->addCredits($fromPurchased, 'refund', 'TTS SRT failed — refund pre-deducted credits: ' . ($result['data']['error'] ?? 'API error'), 'tts_srt', null, 'purchased');
+            }
+
             return $result;
         }
 
@@ -563,6 +578,16 @@ class GenMaxService
             ];
         }
 
+        // Snapshot the monthly balance immediately before deductCredits() draws it
+        // down for the WHOLE batch in one call. Individual entries get refunded
+        // one at a time as they fail below; $monthlyBudgetRemaining tracks how
+        // much of the original monthly-drawn portion is still unrefunded, so each
+        // per-entry (or aggregate, in the catch block) refund can be split back
+        // proportionally into the same monthly/purchased pools the upfront
+        // deduction actually drew from, instead of landing in a single hardcoded
+        // pool.
+        $monthlyBeforeDeduction = $user->monthly_credits;
+
         $deducted = $user->deductCredits($totalEstimatedCredits, "TTS SRT batch pre-deduct: {$totalCharacters} chars, " . count($entries) . " entries", 'tts_batch', null);
 
         if (!$deducted) {
@@ -572,6 +597,8 @@ class GenMaxService
                 'data' => ['error' => 'Không đủ credit (race condition)', 'credits_required' => $totalEstimatedCredits, 'credits_available' => $user->credits],
             ];
         }
+
+        $monthlyBudgetRemaining = min($monthlyBeforeDeduction, $totalEstimatedCredits);
 
         $processedEntryIndices = [];
         $tasks = [];
@@ -596,7 +623,16 @@ class GenMaxService
                 $processedEntryIndices[] = $idx;
 
                 if (!$result['success']) {
-                    $user->addCredits($entryCredits, 'refund', "TTS SRT entry #{$entry['index']} failed: " . ($result['data']['error'] ?? 'API error'), 'tts_batch', null);
+                    $fromMonthly = min($monthlyBudgetRemaining, $entryCredits);
+                    $fromPurchased = $entryCredits - $fromMonthly;
+
+                    if ($fromMonthly > 0) {
+                        $user->addCredits($fromMonthly, 'refund', "TTS SRT entry #{$entry['index']} failed: " . ($result['data']['error'] ?? 'API error'), 'tts_batch', null, 'monthly');
+                    }
+                    if ($fromPurchased > 0) {
+                        $user->addCredits($fromPurchased, 'refund', "TTS SRT entry #{$entry['index']} failed: " . ($result['data']['error'] ?? 'API error'), 'tts_batch', null, 'purchased');
+                    }
+                    $monthlyBudgetRemaining -= $fromMonthly;
                     $creditsRefunded += $entryCredits;
 
                     $tasks[] = [
@@ -644,7 +680,20 @@ class GenMaxService
             }
 
             if ($remainingCredits > 0) {
-                $user->addCredits($remainingCredits, 'refund', 'TTS SRT batch interrupted — refund unprocessed entries', 'tts_batch', null);
+                // Split against whatever monthly budget hasn't already been consumed
+                // by per-entry refunds earlier in this same call (see
+                // $monthlyBudgetRemaining above) — same proportional pattern as the
+                // per-entry refund, just applied to one aggregate amount.
+                $fromMonthly = min($monthlyBudgetRemaining, $remainingCredits);
+                $fromPurchased = $remainingCredits - $fromMonthly;
+
+                if ($fromMonthly > 0) {
+                    $user->addCredits($fromMonthly, 'refund', 'TTS SRT batch interrupted — refund unprocessed entries', 'tts_batch', null, 'monthly');
+                }
+                if ($fromPurchased > 0) {
+                    $user->addCredits($fromPurchased, 'refund', 'TTS SRT batch interrupted — refund unprocessed entries', 'tts_batch', null, 'purchased');
+                }
+                $monthlyBudgetRemaining -= $fromMonthly;
                 $creditsRefunded += $remainingCredits;
             }
 

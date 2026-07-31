@@ -321,6 +321,97 @@ class GenMaxServiceTest extends TestCase
         $this->assertDatabaseCount('tts_histories', 1);
     }
 
+    public function test_text_to_speech_srt_refund_splits_across_pools_for_mixed_pool_user(): void
+    {
+        // Same rationale as Task 3's test_text_to_speech_refund_splits_across_pools_for_mixed_pool_user:
+        // this refund happens synchronously in the same call as the pre-deduction
+        // (unlike getTaskStatus()'s later-request refunds), so there's no schema
+        // gap blocking a proportional monthly/purchased split.
+        Http::fake(['api.genmax.io/*' => Http::response(['error' => 'provider down'], 500)]);
+        $user = $this->premiumUser(['monthly_credits' => 3, 'purchased_credits' => 10, 'credits' => 13]);
+        // 41 chars => ceil(41/10) = 5 credits: 3 from monthly (all of it), 2 from purchased.
+        $srt = "1\n00:00:01,000 --> 00:00:02,000\n" . str_repeat('a', 41) . "\n";
+
+        $result = $this->service->textToSpeechSrt($user, 'voice_abc', $srt, []);
+
+        $this->assertFalse($result['success']);
+        $user->refresh();
+        $this->assertEquals(3, $user->monthly_credits);
+        $this->assertEquals(10, $user->purchased_credits);
+    }
+
+    public function test_text_to_speech_batch_per_entry_refund_splits_across_pools_for_mixed_pool_user(): void
+    {
+        // The single upfront deductCredits() call for the whole batch draws
+        // monthly=3 (all of it) + purchased=2 for a 5-credit total. Entry 1
+        // (1 credit) succeeds and is never refunded. Entry 2 (4 credits) fails;
+        // its refund must draw from the remaining monthly budget (3) first, then
+        // spill 1 credit into purchased — a single refund spanning both pools —
+        // rather than dumping all 4 credits into one hardcoded pool.
+        Http::fake([
+            'api.genmax.io/*' => Http::sequence()
+                ->push(['id' => 'ok_task'], 200)
+                ->push(['error' => 'provider rejected'], 400),
+        ]);
+        $user = $this->premiumUser(['monthly_credits' => 3, 'purchased_credits' => 10, 'credits' => 13]);
+        $entries = [
+            ['index' => 1, 'start' => '00:00:01,000', 'end' => '00:00:02,000', 'text' => 'A'], // 1 credit
+            ['index' => 2, 'start' => '00:00:03,000', 'end' => '00:00:04,000', 'text' => str_repeat('B', 35)], // 4 credits
+        ];
+
+        $result = $this->service->textToSpeechBatch($user, 'voice_abc', $entries, []);
+
+        $this->assertEquals('failed', $result['data']['tasks'][1]['status']);
+        $user->refresh();
+        // monthly: 0 (post pre-deduct) + 3 (refund) = 3; purchased: 8 (post pre-deduct) + 1 (refund) = 9.
+        $this->assertEquals(3, $user->monthly_credits);
+        $this->assertEquals(9, $user->purchased_credits);
+    }
+
+    public function test_text_to_speech_batch_interrupted_refund_splits_across_pools_for_mixed_pool_user(): void
+    {
+        // Proves the catch-block's aggregate "interrupted batch" refund also
+        // splits proportionally, using whatever monthly budget remains after any
+        // per-entry refunds earlier in the same call. Simulates an interruption by
+        // overriding request() (instead of relying on Http::fake(), since
+        // GenMaxService::request() already swallows HTTP-layer \Exceptions into a
+        // normal failure result — it never lets them propagate to the batch loop's
+        // try/catch) to throw a raw exception on the second call, after the first
+        // entry has already succeeded.
+        $user = $this->premiumUser(['monthly_credits' => 3, 'purchased_credits' => 10, 'credits' => 13]);
+        SystemSetting::setGenMaxApiKey('sk-test-key');
+
+        $service = new class extends GenMaxService {
+            public int $calls = 0;
+
+            protected function request(string $method, string $endpoint, array $data = [], array $query = [])
+            {
+                $this->calls++;
+                if ($this->calls === 1) {
+                    return ['success' => true, 'status' => 200, 'data' => ['id' => 'ok_task'], 'headers' => []];
+                }
+
+                throw new \RuntimeException('simulated provider crash');
+            }
+        };
+
+        $entries = [
+            ['index' => 1, 'start' => '00:00:01,000', 'end' => '00:00:02,000', 'text' => 'A'], // 1 credit
+            ['index' => 2, 'start' => '00:00:03,000', 'end' => '00:00:04,000', 'text' => str_repeat('B', 35)], // 4 credits
+        ];
+
+        $result = $service->textToSpeechBatch($user, 'voice_abc', $entries, []);
+
+        $this->assertTrue($result['success']);
+        $this->assertCount(1, $result['data']['tasks']);
+        $user->refresh();
+        // Same arithmetic as the per-entry test above: entry 2's 4 credits are
+        // refunded as a single aggregate in the catch block, split 3 (remaining
+        // monthly budget) + 1 (purchased).
+        $this->assertEquals(3, $user->monthly_credits);
+        $this->assertEquals(9, $user->purchased_credits);
+    }
+
     public function test_get_user_history_returns_recent_paginated_records(): void
     {
         $user = $this->premiumUser();
