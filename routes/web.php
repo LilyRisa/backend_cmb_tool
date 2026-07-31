@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\AdminController;
+use App\Http\Controllers\Admin\VideoDubManagementController;
 use App\Http\Controllers\API\OAuthController;
 use App\Http\Controllers\API\UserController;
 use Illuminate\Support\Facades\Route;
@@ -34,5 +35,8 @@ Route::prefix('admin')->name('admin.')->group(function () {
     Route::middleware('admin')->group(function () {
         Route::post('/logout', [AdminController::class, 'logout'])->name('logout');
         Route::get('/dashboard', [AdminController::class, 'dashboard'])->name('dashboard');
+
+        Route::get('/videodub', [VideoDubManagementController::class, 'index'])->name('videodub.index');
+        Route::get('/videodub/{id}', [VideoDubManagementController::class, 'show'])->name('videodub.show');
     });
 });
