@@ -51,6 +51,19 @@ class Kernel extends ConsoleKernel
         $schedule->call(fn () => SrtTranslateJob::whereIn('status', ['completed', 'failed'])
             ->where('updated_at', '<', now()->subDays(30))
             ->delete())->daily();
+
+        // Finalize video-dub jobs whose client stopped polling before the
+        // linked TTS task finished — see CleanupStaleDubJobs for the
+        // 30-minute stale / 120-minute force-timeout thresholds.
+        $schedule->command('dub:cleanup-stale')->everyFiveMinutes();
+
+        // This project's queue driver is 'database' (no persistent supervisor
+        // process configured) — draining it on a schedule, rather than via a
+        // long-running `queue:work` process, matches how the source project
+        // actually runs its queue in production.
+        $schedule->command('queue:work --stop-when-empty --tries=1 --timeout=600')
+            ->everyMinute()
+            ->withoutOverlapping();
     }
 
     /**
