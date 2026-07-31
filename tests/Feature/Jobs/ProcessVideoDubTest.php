@@ -166,4 +166,62 @@ class ProcessVideoDubTest extends TestCase
         $this->assertEquals('failed', $fresh->status);
         $this->assertStringContainsString('queue worker crashed', $fresh->error);
     }
+
+    public function test_failed_method_leaves_already_submitted_tts_job_pollable(): void
+    {
+        // A worker killed between handle()'s 'tts_pending' update and its return
+        // (e.g. $timeout elapsing) triggers failed() on a job whose TTS task is
+        // already created and paid for. Overwriting it back to 'failed' would hide
+        // it from both finalizers forever — credits charged, no audio, no refund.
+        $user = User::factory()->create();
+        $job = VideoDubJob::create([
+            'user_id' => $user->id,
+            'target_language' => 'vi',
+            'voice_id' => 'voice_abc',
+            'status' => 'tts_pending',
+            'stage' => 'tts',
+            'tts_task_ids' => [777],
+            'credits_deducted' => 42,
+            'error' => null,
+        ]);
+        $path = $this->makeTempAudioFile();
+
+        (new ProcessVideoDub($job, $path, 'audio.mp3', $this->params()))
+            ->failed(new \RuntimeException('worker timed out'));
+
+        $fresh = $job->fresh();
+        $this->assertEquals('tts_pending', $fresh->status);
+        $this->assertNull($fresh->error);
+        $this->assertEquals([777], $fresh->tts_task_ids);
+        $this->assertEquals(42, $fresh->credits_deducted);
+        // cleanup() must not have run either — handle() owns the temp file's
+        // lifetime once it has reached this state.
+        $this->assertFileExists($path);
+
+        @unlink($path);
+    }
+
+    public function test_failed_method_leaves_completed_job_untouched(): void
+    {
+        $user = User::factory()->create();
+        $job = VideoDubJob::create([
+            'user_id' => $user->id,
+            'target_language' => 'vi',
+            'voice_id' => 'voice_abc',
+            'status' => 'completed',
+            'stage' => 'done',
+            'audio_url' => 'https://cdn/final.mp3',
+        ]);
+        $path = $this->makeTempAudioFile();
+
+        (new ProcessVideoDub($job, $path, 'audio.mp3', $this->params()))
+            ->failed(new \RuntimeException('worker crashed after completion'));
+
+        $fresh = $job->fresh();
+        $this->assertEquals('completed', $fresh->status);
+        $this->assertEquals('https://cdn/final.mp3', $fresh->audio_url);
+        $this->assertNull($fresh->error);
+
+        @unlink($path);
+    }
 }

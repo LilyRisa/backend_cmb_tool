@@ -174,6 +174,23 @@ class ProcessVideoDub implements ShouldQueue
 
     public function failed(?\Throwable $exception): void
     {
+        // handle() sets 'tts_pending' after credits are deducted and the provider
+        // TTS task exists, with only cleanup() left to run. A worker killed in that
+        // window (e.g. $timeout elapsing) triggers failed() — and overwriting the
+        // status back to 'failed' would hide the paid, in-flight task from BOTH
+        // finalizers (status() early-returns on 'failed'; CleanupStaleDubJobs only
+        // queries status='tts_pending'), so no refund or audio would ever surface.
+        $current = $this->dubJob->fresh();
+
+        if ($current && in_array($current->status, ['tts_pending', 'completed'])) {
+            Log::warning('ProcessVideoDub failed() called after job already reached a post-submission state — leaving status untouched so the TTS task remains pollable', [
+                'job_id' => $this->dubJob->id,
+                'status' => $current->status,
+                'error' => $exception?->getMessage(),
+            ]);
+            return;
+        }
+
         Log::error('ProcessVideoDub job failed permanently', [
             'job_id' => $this->dubJob->id,
             'error' => $exception?->getMessage(),
