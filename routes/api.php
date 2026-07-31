@@ -6,6 +6,7 @@ use App\Http\Controllers\API\ToolCreditController;
 use App\Http\Controllers\API\ToolFeatureCreditController;
 use App\Http\Controllers\API\ToolSubscriptionController;
 use App\Http\Controllers\API\ToolTtsController;
+use App\Http\Controllers\API\ToolVoiceController;
 use App\Http\Controllers\API\UserController;
 use Illuminate\Support\Facades\Route;
 
@@ -53,4 +54,11 @@ Route::prefix('tool')->middleware(['auth:sanctum', 'token.version'])->group(func
     Route::get('/tts/history', [ToolTtsController::class, 'history']);
     Route::delete('/tts/history/{id}', [ToolTtsController::class, 'deleteHistory']);
     Route::post('/tts/{voice_id}', [ToolTtsController::class, 'generate'])->where('voice_id', '^(?!srt$).+')->middleware('email.verified');
+
+    Route::get('/models', [ToolVoiceController::class, 'models']);
+    Route::get('/voice-system-clone', [ToolVoiceController::class, 'system_clone']);
+    Route::get('/voices/system', [ToolVoiceController::class, 'systemVoices']);
+    Route::get('/voices/cloned', [ToolVoiceController::class, 'clonedVoices']);
+    Route::post('/voices/clone', [ToolVoiceController::class, 'clone']);
+    Route::delete('/voices/{id}', [ToolVoiceController::class, 'delete']);
 });
