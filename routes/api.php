@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\API\AIController;
 use App\Http\Controllers\API\CreditTopupController;
 use App\Http\Controllers\API\OAuthController;
 use App\Http\Controllers\API\ToolCreditController;
@@ -30,6 +31,11 @@ Route::middleware(['auth:sanctum', 'token.version'])->group(function () {
     Route::put('/account/change-password', [UserController::class, 'updatePassword']);
     Route::put('/account/change-name', [UserController::class, 'updateName']);
     Route::match(['put', 'post'], '/account/profile', [UserController::class, 'updateProfile']);
+});
+
+Route::middleware(['auth:sanctum', 'token.version'])->group(function () {
+    Route::post('/transcribe', [AIController::class, 'transcribe'])->middleware('email.verified');
+    Route::post('/translate', [AIController::class, 'translate']);
 });
 
 Route::prefix('tool')->middleware(['auth:sanctum', 'token.version'])->group(function () {
