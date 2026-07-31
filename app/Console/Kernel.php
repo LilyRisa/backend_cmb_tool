@@ -55,15 +55,24 @@ class Kernel extends ConsoleKernel
         // Finalize video-dub jobs whose client stopped polling before the
         // linked TTS task finished — see CleanupStaleDubJobs for the
         // 30-minute stale / 120-minute force-timeout thresholds.
-        $schedule->command('dub:cleanup-stale')->everyFiveMinutes();
+        // withoutOverlapping() needs an explicit expiry: its default mutex TTL is
+        // 1440 minutes (24h), so a hard-killed run (OOM, kill -9, deploy restart)
+        // would silently block every subsequent run for a full day. This batch of up
+        // to 50 stale jobs, each polled over HTTP, can legitimately outrun its own
+        // 5-minute interval under load, so the guard itself is needed.
+        $schedule->command('dub:cleanup-stale')->everyFiveMinutes()->withoutOverlapping(10);
 
         // This project's queue driver is 'database' (no persistent supervisor
         // process configured) — draining it on a schedule, rather than via a
         // long-running `queue:work` process, matches how the source project
         // actually runs its queue in production.
+        //
+        // Same explicit-expiry reasoning as dub:cleanup-stale above — a hard-killed
+        // worker never releases the mutex, and with the 24h default NO queued job
+        // anywhere in the project would be picked up again for a full day, silently.
         $schedule->command('queue:work --stop-when-empty --tries=1 --timeout=600')
             ->everyMinute()
-            ->withoutOverlapping();
+            ->withoutOverlapping(15);
     }
 
     /**
