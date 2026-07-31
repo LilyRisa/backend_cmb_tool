@@ -4,6 +4,7 @@ use App\Http\Controllers\API\AIController;
 use App\Http\Controllers\API\CreditTopupController;
 use App\Http\Controllers\API\OAuthController;
 use App\Http\Controllers\API\SrtGenerateController;
+use App\Http\Controllers\API\SrtTranslateController;
 use App\Http\Controllers\API\ToolCreditController;
 use App\Http\Controllers\API\ToolFeatureCreditController;
 use App\Http\Controllers\API\ToolSubscriptionController;
@@ -77,4 +78,7 @@ Route::prefix('tool')->middleware(['auth:sanctum', 'token.version'])->group(func
 
     Route::post('/generate-srt', [SrtGenerateController::class, 'generate'])->middleware(['throttle:3,1,generate-srt', 'email.verified']);
     Route::get('/generate-srt/status/{id}', [SrtGenerateController::class, 'status'])->where('id', '[0-9]+');
+
+    Route::post('/translate-srt', [SrtTranslateController::class, 'translate'])->middleware(['throttle:3,1,translate-srt', 'email.verified']);
+    Route::get('/translate-srt/status/{id}', [SrtTranslateController::class, 'status'])->where('id', '[0-9]+');
 });
