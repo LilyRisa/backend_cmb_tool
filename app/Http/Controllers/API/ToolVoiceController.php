@@ -23,9 +23,18 @@ class ToolVoiceController extends Controller
         return response()->json($result['data'], $result['status']);
     }
 
-    public function system_clone()
+    public function system_clone(Request $request)
     {
         $result = $this->genMax->getSystemVoicesClone();
+
+        // Same account-wide-list problem as clonedVoices() below: this hits
+        // GET /v1/minimax/voices/ on the provider, which returns the same
+        // unfiltered, account-wide cloned-voice list as getClonedVoices()'s
+        // GET /v1/minimax/voices (they differ only by a trailing slash). Must
+        // be scoped to the caller's own voices for the same reason.
+        if ($result['success']) {
+            $result['data'] = $this->filterVoicesToOwner($result['data'] ?? null, $request->user()->id);
+        }
 
         return response()->json($result['data'], $result['status']);
     }
@@ -49,22 +58,42 @@ class ToolVoiceController extends Controller
         // caller owns per our local VoiceClone ownership table before it ever
         // leaves this endpoint — otherwise any authenticated user could
         // enumerate other users' cloned voices.
-        if ($result['success'] && isset($result['data']['voices']) && is_array($result['data']['voices'])) {
-            $ownedVoiceIds = VoiceClone::where('user_id', $request->user()->id)
-                ->pluck('provider_voice_id')
-                ->all();
-
-            $result['data']['voices'] = array_values(array_filter(
-                $result['data']['voices'],
-                function ($voice) use ($ownedVoiceIds) {
-                    $voiceId = is_array($voice) ? ($voice['voice_id'] ?? $voice['id'] ?? null) : null;
-
-                    return $voiceId !== null && in_array($voiceId, $ownedVoiceIds, true);
-                }
-            ));
+        if ($result['success']) {
+            $result['data'] = $this->filterVoicesToOwner($result['data'] ?? null, $request->user()->id);
         }
 
         return response()->json($result['data'], $result['status']);
+    }
+
+    /**
+     * Scope a GenMax "cloned voices" response down to only the voices the
+     * given user owns per our local VoiceClone table. Fails CLOSED: if $data
+     * isn't shaped the way we expect (missing/non-array 'voices' key, or not
+     * an array at all), we return an empty voice list rather than risk
+     * falling through and returning the raw, unfiltered, account-wide
+     * response — a shape we haven't recognized is not a safe default to
+     * disclose.
+     */
+    private function filterVoicesToOwner($data, int $userId): array
+    {
+        if (!is_array($data) || !isset($data['voices']) || !is_array($data['voices'])) {
+            return ['voices' => []];
+        }
+
+        $ownedVoiceIds = VoiceClone::where('user_id', $userId)
+            ->pluck('provider_voice_id')
+            ->all();
+
+        $data['voices'] = array_values(array_filter(
+            $data['voices'],
+            function ($voice) use ($ownedVoiceIds) {
+                $voiceId = is_array($voice) ? ($voice['voice_id'] ?? $voice['id'] ?? null) : null;
+
+                return $voiceId !== null && in_array($voiceId, $ownedVoiceIds, true);
+            }
+        ));
+
+        return $data;
     }
 
     public function clone(Request $request)
@@ -119,11 +148,17 @@ class ToolVoiceController extends Controller
             $voiceId = $result['data']['voice_id'] ?? null;
 
             if ($voiceId) {
-                VoiceClone::create([
-                    'user_id' => $request->user()->id,
-                    'provider_voice_id' => $voiceId,
-                    'voice_name' => $request->input('voice_name'),
-                ]);
+                // provider_voice_id is unique on voice_clones. If the provider
+                // ever returns a voice_id that already has a row (retry,
+                // provider-side dedup), a bare create() would throw an
+                // unhandled QueryException after the clone already succeeded,
+                // leaving the voice unmanageable. updateOrCreate() instead
+                // reassigns/updates the existing row (the caller who just
+                // successfully cloned it is the current owner of record).
+                VoiceClone::updateOrCreate(
+                    ['provider_voice_id' => $voiceId],
+                    ['user_id' => $request->user()->id, 'voice_name' => $request->input('voice_name')]
+                );
             }
         }
 

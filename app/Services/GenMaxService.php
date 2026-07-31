@@ -84,10 +84,28 @@ class GenMaxService
             return [
                 'success' => false,
                 'status' => 500,
-                'data' => ['error' => 'Lỗi kết nối tới nhà cung cấp dịch vụ: ' . $e->getMessage()],
+                'data' => ['error' => $this->clientSafeErrorMessage($e)],
                 'headers' => [],
             ];
         }
+    }
+
+    /**
+     * Build an error message safe to return to API clients. getApiKey()'s
+     * \RuntimeException carries an internal configuration detail ("GenMax API
+     * key not configured. Please set it in Admin > Tool Settings.") that
+     * shouldn't be disclosed to callers — the full detail is already captured
+     * via Log::error() above, using $e->getMessage() directly. Other
+     * exceptions here are transport-level failures (timeouts, DNS, etc.)
+     * whose message is safe to surface as-is.
+     */
+    protected function clientSafeErrorMessage(\Exception $e): string
+    {
+        if ($e instanceof \RuntimeException) {
+            return 'Dịch vụ tạm thời không khả dụng. Vui lòng thử lại sau.';
+        }
+
+        return 'Lỗi kết nối tới nhà cung cấp dịch vụ: ' . $e->getMessage();
     }
 
     protected function requestMultipart(string $endpoint, array $multipart)
@@ -120,10 +138,14 @@ class GenMaxService
         } catch (\Exception $e) {
             Log::error('GenMax API multipart request failed', ['endpoint' => $endpoint, 'error' => $e->getMessage()]);
 
+            $message = $e instanceof \RuntimeException
+                ? 'Dịch vụ tạm thời không khả dụng. Vui lòng thử lại sau.'
+                : 'Lỗi kết nối: ' . $e->getMessage();
+
             return [
                 'success' => false,
                 'status' => 500,
-                'data' => ['error' => 'Lỗi kết nối: ' . $e->getMessage()],
+                'data' => ['error' => $message],
             ];
         }
     }

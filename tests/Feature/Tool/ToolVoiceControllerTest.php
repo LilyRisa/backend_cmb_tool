@@ -87,6 +87,84 @@ class ToolVoiceControllerTest extends TestCase
         $this->assertEquals('voice_mine', $voices[0]['voice_id']);
     }
 
+    public function test_cloned_voices_fails_closed_on_unexpected_response_shape(): void
+    {
+        // The provider response is missing the expected 'voices' array
+        // entirely. Rather than falling through and returning the raw,
+        // unfiltered (and here, malformed) payload, the endpoint must fail
+        // closed to an empty list.
+        Http::fake(['api.genmax.io/*' => Http::response(['unexpected' => 'shape'], 200)]);
+        $user = User::factory()->create();
+        VoiceClone::factory()->create(['user_id' => $user->id, 'provider_voice_id' => 'voice_mine']);
+
+        $response = $this->withHeaders($this->authHeader($user))->getJson('/api/tool/voices/cloned');
+
+        $response->assertOk();
+        $this->assertEquals([], $response->json('voices'));
+    }
+
+    public function test_system_clone_only_returns_callers_own_voices(): void
+    {
+        // GET /voice-system-clone hits GenMax's GET /v1/minimax/voices/ (note
+        // trailing slash), which is the same account-wide, unfiltered cloned
+        // voice list as GET /v1/minimax/voices used by clonedVoices() above.
+        // It must be scoped the same way.
+        Http::fake([
+            'api.genmax.io/*' => Http::response(['voices' => [
+                ['voice_id' => 'voice_mine', 'voice_name' => 'Mine'],
+                ['voice_id' => 'voice_theirs', 'voice_name' => 'Not mine'],
+            ]], 200),
+        ]);
+        $user = User::factory()->create();
+        $otherUser = User::factory()->create();
+
+        VoiceClone::factory()->create(['user_id' => $user->id, 'provider_voice_id' => 'voice_mine']);
+        VoiceClone::factory()->create(['user_id' => $otherUser->id, 'provider_voice_id' => 'voice_theirs']);
+
+        $response = $this->withHeaders($this->authHeader($user))->getJson('/api/tool/voice-system-clone');
+
+        $response->assertOk();
+        $voices = $response->json('voices');
+        $this->assertCount(1, $voices);
+        $this->assertEquals('voice_mine', $voices[0]['voice_id']);
+    }
+
+    public function test_system_clone_fails_closed_on_unexpected_response_shape(): void
+    {
+        Http::fake(['api.genmax.io/*' => Http::response(['unexpected' => 'shape'], 200)]);
+        $user = User::factory()->create();
+        VoiceClone::factory()->create(['user_id' => $user->id, 'provider_voice_id' => 'voice_mine']);
+
+        $response = $this->withHeaders($this->authHeader($user))->getJson('/api/tool/voice-system-clone');
+
+        $response->assertOk();
+        $this->assertEquals([], $response->json('voices'));
+    }
+
+    public function test_clone_reclones_existing_provider_voice_id_without_error(): void
+    {
+        // If the provider ever returns a voice_id that already has a
+        // voice_clones row (retry, provider-side dedup), recording it must
+        // not throw due to the unique constraint on provider_voice_id.
+        Http::fake(['api.genmax.io/*' => Http::response(['voice_id' => 'dup_voice'], 200)]);
+        $firstUser = $this->premiumUser();
+        VoiceClone::factory()->create(['user_id' => $firstUser->id, 'provider_voice_id' => 'dup_voice', 'voice_name' => 'Old name']);
+
+        $secondUser = $this->premiumUser();
+        $file = UploadedFile::fake()->create('sample.mp3', 100, 'audio/mpeg');
+
+        $response = $this->withHeaders($this->authHeader($secondUser))
+            ->post('/api/tool/voices/clone', ['file' => $file, 'voice_name' => 'New name']);
+
+        $response->assertOk();
+        $this->assertDatabaseCount('voice_clones', 1);
+        $this->assertDatabaseHas('voice_clones', [
+            'provider_voice_id' => 'dup_voice',
+            'user_id' => $secondUser->id,
+            'voice_name' => 'New name',
+        ]);
+    }
+
     public function test_clone_uploads_audio_file(): void
     {
         Http::fake(['api.genmax.io/*' => Http::response(['voice_id' => 'new_v1'], 200)]);

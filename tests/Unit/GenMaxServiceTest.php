@@ -597,6 +597,12 @@ class GenMaxServiceTest extends TestCase
         $this->assertEquals(500, $result['status']);
         $this->assertEquals(1000, $user->fresh()->monthly_credits);
         $this->assertEquals(1000, $user->fresh()->credits);
+
+        // The internal configuration detail ("GenMax API key not configured.
+        // Please set it in Admin > Tool Settings.") must never reach the
+        // client — only a generic message should be returned.
+        $this->assertStringNotContainsString('Admin > Tool Settings', $result['data']['error']);
+        $this->assertStringNotContainsString('not configured', $result['data']['error']);
     }
 
     public function test_get_task_status_charges_additional_credits_when_actual_usage_exceeds_estimate(): void
