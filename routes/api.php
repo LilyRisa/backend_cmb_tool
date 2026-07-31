@@ -3,6 +3,7 @@
 use App\Http\Controllers\API\AIController;
 use App\Http\Controllers\API\CreditTopupController;
 use App\Http\Controllers\API\OAuthController;
+use App\Http\Controllers\API\SrtGenerateController;
 use App\Http\Controllers\API\ToolCreditController;
 use App\Http\Controllers\API\ToolFeatureCreditController;
 use App\Http\Controllers\API\ToolSubscriptionController;
@@ -73,4 +74,7 @@ Route::prefix('tool')->middleware(['auth:sanctum', 'token.version'])->group(func
     Route::get('/voices/cloned', [ToolVoiceController::class, 'clonedVoices']);
     Route::post('/voices/clone', [ToolVoiceController::class, 'clone'])->middleware(['throttle:5,1,voice-clone', 'email.verified']);
     Route::delete('/voices/{id}', [ToolVoiceController::class, 'delete']);
+
+    Route::post('/generate-srt', [SrtGenerateController::class, 'generate'])->middleware(['throttle:3,1,generate-srt', 'email.verified']);
+    Route::get('/generate-srt/status/{id}', [SrtGenerateController::class, 'status'])->where('id', '[0-9]+');
 });
