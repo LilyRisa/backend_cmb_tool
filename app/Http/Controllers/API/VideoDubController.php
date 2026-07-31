@@ -146,23 +146,9 @@ class VideoDubController extends Controller
             $taskStatus = $taskData['status'] ?? 'pending';
         }
 
-        if ($taskStatus === 'completed') {
-            $audioUrl = $taskData['audio_url'] ?? null;
-            $duration = $this->estimateDurationFromSrt($job->srt_translated ?? $job->srt_original);
-
-            $job->update([
-                'status' => 'completed',
-                'stage' => 'done',
-                'audio_url' => $audioUrl,
-                'audio_urls' => $audioUrl ? [$audioUrl] : [],
-                'duration_seconds' => $duration,
-            ]);
-        } elseif ($taskStatus === 'failed') {
-            $job->update([
-                'status' => 'failed',
-                'stage' => 'done',
-                'error' => $taskData['error'] ?? 'TTS task failed',
-            ]);
+        // Shared with dub:cleanup-stale's finalizer — see VideoDubJob::applyTtsResult().
+        if (in_array($taskStatus, ['completed', 'failed'])) {
+            $job->applyTtsResult($taskData);
         }
         // else: still pending — return current state.
 
@@ -197,25 +183,5 @@ class VideoDubController extends Controller
             'error' => $job->error,
             'created_at' => $job->created_at?->toIso8601String(),
         ];
-    }
-
-    protected function estimateDurationFromSrt(?string $srt): int
-    {
-        if (empty($srt)) {
-            return 0;
-        }
-
-        preg_match_all('/(\d{2}):(\d{2}):(\d{2})[,.](\d{3})/', $srt, $matches, PREG_SET_ORDER);
-
-        if (empty($matches)) {
-            return 0;
-        }
-
-        $lastMatch = end($matches);
-        $hours = (int) $lastMatch[1];
-        $minutes = (int) $lastMatch[2];
-        $seconds = (int) $lastMatch[3];
-
-        return ($hours * 3600) + ($minutes * 60) + $seconds;
     }
 }

@@ -47,11 +47,15 @@ class CleanupStaleDubJobsTest extends TestCase
         $history = TtsHistory::factory()->create([
             'user_id' => $user->id,
             'status' => 'pending',
+            'credits_deducted_user' => 10,
         ]);
         $job = VideoDubJob::factory()->create([
             'user_id' => $user->id,
             'status' => 'tts_pending',
             'tts_task_ids' => [$history->id],
+            // 8s of subtitles, so the duration assertion below can't pass vacuously on 0.
+            'srt_translated' => "1\n00:00:00,000 --> 00:00:08,000\nXin chào\n",
+            'credits_deducted' => 10,
             'updated_at' => now()->subMinutes(35),
         ]);
 
@@ -60,6 +64,13 @@ class CleanupStaleDubJobsTest extends TestCase
         $fresh = $job->fresh();
         $this->assertEquals('completed', $fresh->status);
         $this->assertEquals('https://cdn/done.mp3', $fresh->audio_url);
+        // The cron finalizer used to skip duration_seconds entirely, leaving every
+        // cron-finalized job NULL forever — it now shares the controller's finalizer.
+        $this->assertEquals(8, $fresh->duration_seconds);
+        // getTaskStatus() reconciled the pre-deduction (10) down to the provider's
+        // actual usage (0 characters reported) and refunded the difference; the job
+        // must report that reconciled charge, not the stale estimate.
+        $this->assertEquals(0, $fresh->credits_deducted);
     }
 
     public function test_marks_job_failed_when_tts_task_failed(): void

@@ -85,6 +85,71 @@ class VideoDubJob extends Model
             ->exists();
     }
 
+    /**
+     * Write the terminal state implied by a resolved TTS task onto this job.
+     *
+     * Single source of truth for "TTS resolved → job finalized", shared by BOTH
+     * finalization paths (VideoDubController::status()'s client poll and the
+     * dub:cleanup-stale cron) so they cannot drift apart again — they previously
+     * hand-rolled this independently and the cron path never wrote
+     * duration_seconds, leaving every cron-finalized job at NULL forever.
+     *
+     * $taskData is GenMaxService::getTaskStatus()'s `data` payload (i.e.
+     * formatHistoryResponse()'s array), or an equivalent array built by the caller.
+     * Its `credits_deducted_user` key carries the RECONCILED charge — getTaskStatus()
+     * refunds in full on failure and adjusts up/down to actual provider usage on
+     * completion — so it, not ProcessVideoDub's pre-deduction estimate, is what this
+     * job should report to the API and to the admin dashboard's summed credit stat.
+     */
+    public function applyTtsResult(array $taskData): void
+    {
+        $status = $taskData['status'] ?? 'pending';
+
+        if ($status === 'completed') {
+            $audioUrl = $taskData['audio_url'] ?? null;
+
+            $this->update([
+                'status' => 'completed',
+                'stage' => 'done',
+                'audio_url' => $audioUrl,
+                'audio_urls' => $audioUrl ? [$audioUrl] : [],
+                'duration_seconds' => self::estimateDurationFromSrt($this->srt_translated ?? $this->srt_original),
+                'credits_deducted' => $taskData['credits_deducted_user'] ?? $this->credits_deducted,
+            ]);
+        } elseif ($status === 'failed') {
+            $this->update([
+                'status' => 'failed',
+                'stage' => 'done',
+                'error' => $taskData['error'] ?? 'TTS task failed',
+                'credits_deducted' => $taskData['credits_deducted_user'] ?? $this->credits_deducted,
+            ]);
+        }
+        // else: still pending — caller leaves the row untouched.
+    }
+
+    /**
+     * Derive a duration (seconds) from an SRT payload's last timestamp.
+     */
+    public static function estimateDurationFromSrt(?string $srt): int
+    {
+        if (empty($srt)) {
+            return 0;
+        }
+
+        preg_match_all('/(\d{2}):(\d{2}):(\d{2})[,.](\d{3})/', $srt, $matches, PREG_SET_ORDER);
+
+        if (empty($matches)) {
+            return 0;
+        }
+
+        $lastMatch = end($matches);
+        $hours = (int) $lastMatch[1];
+        $minutes = (int) $lastMatch[2];
+        $seconds = (int) $lastMatch[3];
+
+        return ($hours * 3600) + ($minutes * 60) + $seconds;
+    }
+
     public function getCompletedAudioUrls(): array
     {
         $ids = $this->tts_task_ids ?? [];

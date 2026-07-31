@@ -141,6 +141,45 @@ class VideoDubControllerTest extends TestCase
         $this->assertEquals(5, $job->fresh()->duration_seconds);
     }
 
+    public function test_status_syncs_refunded_credits_onto_job_when_tts_task_failed(): void
+    {
+        Http::fake(['api.genmax.io/*' => Http::response(['status' => 'failed', 'error' => 'provider error'], 200)]);
+
+        $user = $this->premiumUser();
+
+        // GenMaxService::getTaskStatus() refunds in full on a failed task, gated on
+        // credits_deducted_user > 0 and the atomic is_credit_deducted claim (false by
+        // default), and reports the reconciled 0 back via formatHistoryResponse()'s
+        // 'credits_deducted_user' key.
+        $history = TtsHistory::factory()->create([
+            'user_id' => $user->id,
+            'status' => 'pending',
+            'credits_deducted_user' => 25,
+            'is_credit_deducted' => false,
+        ]);
+
+        $job = VideoDubJob::factory()->create([
+            'user_id' => $user->id,
+            'status' => 'tts_pending',
+            'stage' => 'tts',
+            'tts_task_ids' => [$history->id],
+            'credits_deducted' => 25,
+        ]);
+
+        $this->withHeaders($this->authHeader($user))
+            ->getJson("/api/tool/video-dub/status/{$job->id}")
+            ->assertOk()
+            ->assertJsonPath('status', 'failed')
+            ->assertJsonPath('credits_deducted', 0);
+
+        // The refund really happened...
+        $this->assertEquals(0, $history->fresh()->credits_deducted_user);
+        $this->assertEquals(1025, $user->fresh()->monthly_credits);
+        // ...and the job no longer overstates the charge to the API caller or to the
+        // admin dashboard's summed "Credits" stat.
+        $this->assertEquals(0, $job->fresh()->credits_deducted);
+    }
+
     public function test_status_withholds_srt_and_audio_for_failed_job(): void
     {
         $user = $this->premiumUser();

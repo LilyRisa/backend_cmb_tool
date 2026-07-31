@@ -71,6 +71,7 @@ class CleanupStaleDubJobs extends Command
         $allCompleted = true;
         $anyFailed = false;
         $audioUrls = [];
+        $creditsDeductedUser = null;
 
         foreach ($ttsTaskIds as $historyId) {
             try {
@@ -87,6 +88,15 @@ class CleanupStaleDubJobs extends Command
 
             $status = $result['data']['status'] ?? 'pending';
 
+            // getTaskStatus() reconciles the real charge on the linked TtsHistory
+            // (full refund on failure, adjust up/down to actual usage on success) —
+            // accumulate it so applyTtsResult() can sync it back onto the job. Only
+            // summed across tasks that resolved, which is all of them by the time
+            // $allCompleted survives this loop.
+            if (isset($result['data']['credits_deducted_user'])) {
+                $creditsDeductedUser = (int) $creditsDeductedUser + (int) $result['data']['credits_deducted_user'];
+            }
+
             if ($status === 'failed') {
                 $anyFailed = true;
             } elseif ($status === 'completed') {
@@ -99,20 +109,14 @@ class CleanupStaleDubJobs extends Command
         }
 
         if ($allCompleted && !empty($ttsTaskIds)) {
-            if ($anyFailed && empty($audioUrls)) {
-                $job->update([
-                    'status' => 'failed',
-                    'stage' => 'done',
-                    'error' => 'All TTS tasks failed (finalized by cron)',
-                ]);
-            } else {
-                $job->update([
-                    'status' => 'completed',
-                    'stage' => 'done',
-                    'audio_url' => $audioUrls[0] ?? null,
-                    'audio_urls' => $audioUrls,
-                ]);
-            }
+            // Shared with VideoDubController::status()'s finalizer so the two paths
+            // can't write different fields — see VideoDubJob::applyTtsResult().
+            $job->applyTtsResult([
+                'status' => $anyFailed && empty($audioUrls) ? 'failed' : 'completed',
+                'audio_url' => $audioUrls[0] ?? null,
+                'error' => 'All TTS tasks failed (finalized by cron)',
+                'credits_deducted_user' => $creditsDeductedUser,
+            ]);
 
             $this->line("  Job #{$job->id}: finalized as {$job->status}");
             Log::info("Stale dub job #{$job->id} finalized", [
