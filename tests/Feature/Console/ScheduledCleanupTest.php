@@ -8,6 +8,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class ScheduledCleanupTest extends TestCase
@@ -91,5 +92,32 @@ class ScheduledCleanupTest extends TestCase
 
         $this->assertEquals(PendingSubscriptionPayment::STATUS_EXPIRED, $old->fresh()->status);
         $this->assertEquals(PendingSubscriptionPayment::STATUS_PENDING, $recent->fresh()->status);
+    }
+
+    public function test_daily_schedule_reclaims_orphaned_srt_temp_files(): void
+    {
+        $disk = Storage::disk('local');
+
+        // An orphan: a temp upload whose job row was cascade-deleted (user deleted
+        // mid-pipeline), so the job never ran and never called its own cleanup().
+        $orphan = 'srt-generate-temp/orphan-test.mp3';
+        $fresh = 'srt-generate-temp/fresh-test.mp3';
+
+        $disk->put($orphan, 'stale audio bytes');
+        $disk->put($fresh, 'in-flight audio bytes');
+
+        // The Storage facade can't backdate an mtime — touch the real path instead.
+        touch($disk->path($orphan), now()->subDays(2)->timestamp);
+
+        try {
+            $this->travelTo(Carbon::tomorrow()->startOfDay());
+
+            $this->artisan('schedule:run');
+
+            $this->assertFalse($disk->exists($orphan));
+            $this->assertTrue($disk->exists($fresh));
+        } finally {
+            $disk->delete([$orphan, $fresh]);
+        }
     }
 }

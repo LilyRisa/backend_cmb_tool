@@ -38,19 +38,29 @@ class SrtTranslateController extends Controller
         $tempPath = $file->store('srt-translate-temp', 'local');
         $fullTempPath = storage_path('app/' . $tempPath);
 
-        $job = SrtTranslateJob::create([
-            'user_id' => $user->id,
-            'target_language' => $request->input('target_language'),
-            'status' => 'queued',
-            'stage' => 'queued',
-        ]);
+        try {
+            $job = SrtTranslateJob::create([
+                'user_id' => $user->id,
+                'target_language' => $request->input('target_language'),
+                'status' => 'queued',
+                'stage' => 'queued',
+            ]);
 
-        ProcessSrtTranslate::dispatch(
-            $job,
-            $fullTempPath,
-            $file->getClientOriginalName(),
-            ['target_language' => $request->input('target_language')]
-        );
+            ProcessSrtTranslate::dispatch(
+                $job,
+                $fullTempPath,
+                $file->getClientOriginalName(),
+                ['target_language' => $request->input('target_language')]
+            );
+        } catch (\Throwable $e) {
+            // Nothing owns the temp file until the job is queued: if create() or
+            // dispatch() throws, no job will ever run to call its own cleanup().
+            if (file_exists($fullTempPath)) {
+                @unlink($fullTempPath);
+            }
+
+            throw $e;
+        }
 
         return response()->json([
             'success' => true,

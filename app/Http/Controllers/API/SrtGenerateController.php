@@ -38,15 +38,25 @@ class SrtGenerateController extends Controller
         $tempPath = $file->store('srt-generate-temp', 'local');
         $fullTempPath = storage_path('app/' . $tempPath);
 
-        $job = SrtGenerateJob::create([
-            'user_id' => $user->id,
-            'original_filename' => $file->getClientOriginalName(),
-            'language' => $request->input('language'),
-            'status' => 'queued',
-            'stage' => 'queued',
-        ]);
+        try {
+            $job = SrtGenerateJob::create([
+                'user_id' => $user->id,
+                'original_filename' => $file->getClientOriginalName(),
+                'language' => $request->input('language'),
+                'status' => 'queued',
+                'stage' => 'queued',
+            ]);
 
-        ProcessSrtGenerate::dispatch($job, $fullTempPath, $file->getClientOriginalName(), $request->input('language'));
+            ProcessSrtGenerate::dispatch($job, $fullTempPath, $file->getClientOriginalName(), $request->input('language'));
+        } catch (\Throwable $e) {
+            // Nothing owns the temp file until the job is queued: if create() or
+            // dispatch() throws, no job will ever run to call its own cleanup().
+            if (file_exists($fullTempPath)) {
+                @unlink($fullTempPath);
+            }
+
+            throw $e;
+        }
 
         return response()->json([
             'success' => true,
