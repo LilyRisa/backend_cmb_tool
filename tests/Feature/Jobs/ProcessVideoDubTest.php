@@ -153,6 +153,47 @@ class ProcessVideoDubTest extends TestCase
         $this->assertFileDoesNotExist($path);
     }
 
+    public function test_real_dispatch_through_database_queue_serializes_and_runs_the_pipeline(): void
+    {
+        Http::fake([
+            'api.groq.com/*' => Http::response([
+                'segments' => [['start' => 0, 'end' => 3, 'text' => 'Hello world this is a test sentence']],
+            ], 200),
+            'openrouter.ai/*' => Http::response([
+                'choices' => [['message' => ['content' => "1\n00:00:00,000 --> 00:00:03,000\nXin chào thế giới"]]],
+            ], 200),
+            'api.genmax.io/*' => Http::response(['id' => 'genmax_task_1'], 200),
+        ]);
+
+        // phpunit.xml pins QUEUE_CONNECTION=sync, under which dispatch() runs the
+        // handler inline and never serializes. Every other test in this phase either
+        // fakes the queue or calls handle() on a hand-built instance, so the
+        // dispatch -> jobs table -> worker -> deserialize -> handle round-trip
+        // (where the SerializesModels orphan/temp-file-leak failure modes live) was
+        // never exercised. Force the database driver for this one test.
+        config(['queue.default' => 'database']);
+
+        $user = User::factory()->create(['package_type' => 'premium', 'package_expires_at' => now()->addDays(10), 'monthly_credits' => 1000, 'purchased_credits' => 0, 'credits' => 1000]);
+        $job = VideoDubJob::create(['user_id' => $user->id, 'target_language' => 'vi', 'voice_id' => 'voice_abc', 'status' => 'queued', 'stage' => 'queued']);
+        $path = $this->makeTempAudioFile();
+
+        ProcessVideoDub::dispatch($job, $path, 'audio.mp3', $this->params());
+
+        // Genuinely queued, not run inline.
+        $this->assertDatabaseCount('jobs', 1);
+        $this->assertEquals('queued', $job->fresh()->status);
+
+        $this->artisan('queue:work', ['--once' => true, '--queue' => 'default'])->assertExitCode(0);
+
+        $fresh = $job->fresh();
+        $this->assertEquals('tts_pending', $fresh->status);
+        $this->assertNotEmpty($fresh->tts_task_ids);
+        $this->assertStringContainsString('Xin chào', $fresh->srt_translated);
+        $this->assertFileDoesNotExist($path);
+        $this->assertDatabaseCount('jobs', 0);
+        $this->assertDatabaseCount('failed_jobs', 0);
+    }
+
     public function test_failed_method_marks_job_as_permanently_failed(): void
     {
         $user = User::factory()->create();
