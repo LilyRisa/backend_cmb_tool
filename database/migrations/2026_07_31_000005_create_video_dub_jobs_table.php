@@ -34,7 +34,10 @@ return new class extends Migration
             $table->integer('credits_deducted')->default(0);
 
             // TTS results
-            $table->string('audio_url')->nullable();
+            // text, not string: signed CDN/S3 URLs from this provider routinely
+            // exceed 255 chars — the same reason tts_histories.audio_url was
+            // widened in 2026_07_31_000002_widen_tts_histories_text_and_audio_url_columns.
+            $table->text('audio_url')->nullable();
             $table->json('audio_urls')->nullable();
             $table->integer('duration_seconds')->nullable();
 
