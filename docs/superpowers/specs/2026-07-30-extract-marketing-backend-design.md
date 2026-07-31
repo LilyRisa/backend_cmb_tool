@@ -25,9 +25,9 @@ Mục tiêu: tách phần backend của **CMB Core Tool** ra thành một projec
 | Loại | Thành phần |
 |---|---|
 | Models | `User` (bỏ mọi quan hệ tới Device/DSP/Audio/Playlist), `CreditTransaction`, `PendingCreditTopup`, `FeatureUsage`, `FeatureCreditUsage`, `Tool`, `TtsHistory`, `SrtGenerateJob`, `SrtTranslateJob`, `VideoDubJob`, `Subscription`, `PendingSubscriptionPayment`, `EmailCampaign`, `FbAutoCommentCampaign`, `MetaAccount`, `BugReport`, `ContactMessage`, `BlogPost`, `BlogCategory`, `SystemSetting`, `LoginLog`, `Preorder` |
-| API Controllers | `UserController`, `OAuthController`, `AIController`, `VideoDubController`, `SrtTranslateController`, `SrtGenerateController`, `ToolTtsController`, `ToolVoiceController`, `ToolCreditController`, `ToolSubscriptionController`, `CreditTopupController`, `ToolFeatureCreditController`, `FbAutoCommentController`, `BugReportController`, `FeatureUsageController`, `ScriptController`, `PexelsController`, `StockMediaController`, `SceneController`, `MetaAccountApiController`, `MetaAiController`, `UpdateCheckController` (chỉ giữ method `getCmbLatestVersion`/`getCmbVersionList`), **`ImageGenController` (mới)** |
+| API Controllers | `UserController`, `OAuthController`, `AIController`, `VideoDubController`, `SrtTranslateController`, `SrtGenerateController`, `ToolTtsController`, `ToolVoiceController`, `ToolCreditController`, `ToolSubscriptionController`, `CreditTopupController`, `ToolFeatureCreditController`, `FbAutoCommentController`, `BugReportController`, `FeatureUsageController`, `ScriptController`, `SceneController`, `MetaAccountApiController`, `MetaAiController`, `UpdateCheckController` (chỉ giữ method `getCmbLatestVersion`/`getCmbVersionList`), **`ImageGenController` (mới)** — ~~`PexelsController`, `StockMediaController`~~ (bỏ khỏi scope, xem mục 5) |
 | Web/Admin Controllers | `BlogController`, `PricingController`, `CustomerInquiryController`, `CmbController`, `AdminController`, `BlogManagementController`, `CmbManagementController`, `EmailCampaignController`, `InquiryManagementController`, `MetaAccountController`, `ToolManagementController`, `ToolSettingsController`, `ToolStatsController`, `UserAnalyticsController`, `UserManagementController`, `VideoDubManagementController` |
-| Services | `CreditService`, `GeminiService`, `GenMaxService`, `GroqService`, `MetaAiService`, `OpenRouterService`, `PexelsService`, `PremiumService`, `SceneService`, `ScriptService`, `SePayService`, `SrtChunkTranslationService`, `SrtParserService`, `SrtTimeRedistributionService`, `StockMediaService`, **`OpenAiImageService` (mới)** |
+| Services | `CreditService`, `GeminiService`, `GenMaxService`, `GroqService`, `MetaAiService`, `OpenRouterService`, `PremiumService`, `SceneService`, `ScriptService`, `SePayService`, `SrtChunkTranslationService`, `SrtParserService`, `SrtTimeRedistributionService`, **`OpenAiImageService` (mới)** — ~~`PexelsService`, `StockMediaService`~~ (bỏ khỏi scope, xem mục 5) |
 | Jobs | `ProcessSrtGenerate`, `ProcessSrtTranslate`, `ProcessVideoDub`, `SendCampaignEmails` |
 | Routes | `/api/auth/*`, `/api/user/*`, `/me`, `/logout`, `/account/*`, `/transcribe`, `/translate`, `/api/tool/*` (bao gồm route mới `/api/tool/generate-image`), `/api/meta-account/*`, `/api/meta-ai/*`, `/api/cmb/*`, các trang web pricing/blog/liên hệ, và toàn bộ route admin tương ứng |
 | Kèm theo | FormRequest, Mailable, Blade view tương ứng với mỗi controller ở trên được tái tạo song song |
@@ -45,6 +45,12 @@ Mục tiêu: tách phần backend của **CMB Core Tool** ra thành một projec
 
 ## 5. API tạo hình ảnh mới (OpenAI-compatible)
 
+> **Cập nhật (Phase 3D):** bỏ hoàn toàn `PexelsController`/`PexelsService` và
+> `StockMediaController`/`StockMediaService` khỏi scope — thay bằng API tạo hình ảnh AI
+> dưới đây. `ScriptController`/`ScriptService` và `SceneController`/`SceneService` giữ
+> nguyên như thiết kế gốc. Giá credit/ảnh KHÔNG hardcode trong `CreditService` như mô tả
+> ban đầu — admin tự đặt giá qua trang Tool Settings (xem cập nhật bên dưới).
+
 ### Settings (Admin > Tool Settings, section "Image Generation")
 
 Theo pattern `SystemSetting::getValue/setValue` sẵn có (giống `genmax_api_key`):
@@ -52,8 +58,12 @@ Theo pattern `SystemSetting::getValue/setValue` sẵn có (giống `genmax_api_k
 - `image_gen_base_url` — mặc định `https://api.openai.com/v1`
 - `image_gen_api_key` — mã hoá (`is_encrypted = true`)
 - `image_gen_model` — mặc định `gpt-image-1`
+- `image_gen_credits_per_image` — **(mới)** số credit/ảnh, admin tự đặt qua giao diện, mặc định 200 nếu chưa cấu hình. Không hardcode trong code — đây là tính năng hoàn toàn mới, chưa có giá tham chiếu từ hệ thống gốc.
 
 Cho phép trỏ sang bất kỳ endpoint tương thích chuẩn OpenAI Images API nào (proxy, self-host, provider khác).
+
+Trang admin quản lý các setting này thuộc `Admin\ToolSettingsController` (mới, 1 trang
+index hiển thị + form cập nhật 4 giá trị trên), dùng chung `admin.layout` (Phase 3C).
 
 ### Service: `OpenAiImageService`
 
@@ -65,9 +75,10 @@ Cho phép trỏ sang bất kỳ endpoint tương thích chuẩn OpenAI Images AP
 
 ### Controller: `API\ImageGenController::generate()`
 
-- Route: `POST /api/tool/generate-image`, trong nhóm middleware `tool` hiện có (`auth:sanctum`, `token.version`) + `throttle:5,1` + `email.verified` — nhất quán với `generate-script`, `generate-scenes`.
+- Route: `POST /api/tool/generate-image`, trong nhóm middleware `tool` hiện có (`auth:sanctum`, `token.version`) + `throttle:5,1,generate-image` (3rd-segment rõ ràng, theo quy ước của dự án) + `email.verified` — nhất quán với `generate-script`, `generate-scenes`.
 - `GenerateImageRequest`: `prompt` (required, string, max 2000), `size` (nullable, in: 256x256,512x512,1024x1024), `n` (nullable, integer, 1–4, default 1).
-- Gate truy cập: theo credit — thêm feature key `image_generation` vào bảng giá của `CreditService` (số credit tính theo `n` ảnh sinh ra), dùng lại luồng `ToolFeatureCreditController` 2 pha (deduct-feature/confirm-feature) mà client app hiện đang gọi cho các feature khác — **không** deduct trực tiếp trong `ImageGenController` để nhất quán với cách app desktop đang tính phí các tool khác.
+- **Premium gate**: kiểm tra `isPremium()` ngay trong controller, giống hệt `ScriptController`/`SceneController` — đây là điểm chặn server-side duy nhất của endpoint này (xem mục credit bên dưới để biết lý do cần điểm chặn này).
+- Gate truy cập theo credit: thêm feature key `image_generation` vào bảng giá của `CreditService` (số credit = `n` × `image_gen_credits_per_image`, đọc động từ `SystemSetting` — khác với `create_video_script` tính theo phút), dùng lại luồng `ToolFeatureCreditController` 2 pha (deduct-feature/confirm-feature) mà client app hiện đang gọi cho các feature khác — **không** deduct trực tiếp trong `ImageGenController` để nhất quán với cách app desktop đang tính phí các tool khác. Lưu ý: việc deduct/confirm hoàn toàn do client điều phối, backend không ép buộc trình tự gọi — đây là lý do premium gate ở trên là cần thiết để tránh user free gọi thẳng endpoint mà bỏ qua bước trừ credit phía client.
 - Trả JSON: `{ success, data: { images: [url, ...] } }` hoặc `{ success: false, error }`.
 - Không có model/API lịch sử ảnh riêng ở v1 (YAGNI) — bổ sung sau nếu cần giống `tts/history`.
 
