@@ -89,15 +89,18 @@ class SrtChunkTranslationServiceTest extends TestCase
         $service->translate($srt, 'vi', $translator);
     }
 
-    public function test_translate_throws_if_timestamps_are_modified(): void
+    public function test_translate_always_preserves_original_timestamps_regardless_of_translator_output(): void
     {
         $service = new SrtChunkTranslationService(chunkSize: 70, maxRetries: 1);
-        $srt = $this->buildSrt(1);
+        $srt = $this->buildSrt(1); // "1\n00:00:01,000 --> 00:00:02,000\nLine 1"
 
-        $translator = fn(string $chunk, string $lang, string $context = '') => "1\n00:00:05,000 --> 00:00:06,000\nWrong timing";
+        // Translator returns completely different (wrong) timestamps — service must ignore them.
+        $translator = fn(string $chunk, string $lang, string $context = '') => "1\n00:00:05,000 --> 00:00:06,000\nTranslated text";
 
-        $this->expectException(\RuntimeException::class);
+        $result = $service->translate($srt, 'vi', $translator);
 
-        $service->translate($srt, 'vi', $translator);
+        $this->assertStringContainsString('00:00:01,000 --> 00:00:02,000', $result);
+        $this->assertStringContainsString('Translated text', $result);
+        $this->assertStringNotContainsString('00:00:05,000 --> 00:00:06,000', $result);
     }
 }
