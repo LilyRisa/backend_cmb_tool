@@ -12,6 +12,7 @@ use App\Http\Controllers\API\ToolTtsController;
 use App\Http\Controllers\API\ToolVoiceController;
 use App\Http\Controllers\API\UserController;
 use App\Http\Controllers\API\VideoDubController;
+use App\Http\Controllers\API\ScriptController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/user/login', [UserController::class, 'login'])->middleware('throttle:10,1,login');
@@ -85,4 +86,6 @@ Route::prefix('tool')->middleware(['auth:sanctum', 'token.version'])->group(func
 
     Route::post('/video-dub', [VideoDubController::class, 'dub'])->middleware(['throttle:3,1,video-dub', 'email.verified']);
     Route::get('/video-dub/status/{id}', [VideoDubController::class, 'status'])->where('id', '[0-9]+');
+
+    Route::post('/generate-script', [ScriptController::class, 'generate'])->middleware(['throttle:5,1,generate-script', 'email.verified']);
 });
