@@ -22,7 +22,7 @@ class ProcessSrtTranslate implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $tries = 1;
-    public int $timeout = 300;
+    public int $timeout = 900;
 
     protected SrtTranslateJob $translateJob;
     protected string $audioFilePath;
