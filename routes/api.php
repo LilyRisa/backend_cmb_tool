@@ -36,8 +36,8 @@ Route::middleware(['auth:sanctum', 'token.version'])->group(function () {
 });
 
 Route::middleware(['auth:sanctum', 'token.version'])->group(function () {
-    Route::post('/transcribe', [AIController::class, 'transcribe'])->middleware('email.verified');
-    Route::post('/translate', [AIController::class, 'translate']);
+    Route::post('/transcribe', [AIController::class, 'transcribe'])->middleware(['throttle:10,1,transcribe', 'email.verified']);
+    Route::post('/translate', [AIController::class, 'translate'])->middleware('throttle:10,1,translate');
 });
 
 Route::prefix('tool')->middleware(['auth:sanctum', 'token.version'])->group(function () {

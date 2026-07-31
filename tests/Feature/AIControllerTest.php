@@ -6,6 +6,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Route;
 use Tests\TestCase;
 
 class AIControllerTest extends TestCase
@@ -101,6 +102,23 @@ class AIControllerTest extends TestCase
             'target_language' => 'vi',
             'format' => 'text',
         ])->assertStatus(403);
+    }
+
+    public function test_transcribe_and_translate_routes_are_rate_limited(): void
+    {
+        $middlewareFor = function (string $uri): array {
+            $route = collect(Route::getRoutes()->getRoutes())
+                ->first(fn ($r) => $r->uri() === $uri && in_array('POST', $r->methods(), true));
+
+            $this->assertNotNull($route, "Route POST {$uri} not found");
+
+            return $route->gatherMiddleware();
+        };
+
+        // Explicit 3rd throttle segment is this project's convention: without it,
+        // Laravel's default key is only user-ID/IP and the limit collides across routes.
+        $this->assertContains('throttle:10,1,transcribe', $middlewareFor('api/transcribe'));
+        $this->assertContains('throttle:10,1,translate', $middlewareFor('api/translate'));
     }
 
     public function test_translate_returns_500_on_provider_failure(): void
