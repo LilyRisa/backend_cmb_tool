@@ -82,4 +82,13 @@ class SrtTimeRedistributionServiceTest extends TestCase
         $entryCount = substr_count($result, '-->');
         $this->assertGreaterThan(1, $entryCount);
     }
+
+    public function test_format_timestamp_carries_milliseconds_that_round_to_1000(): void
+    {
+        $service = new SrtTimeRedistributionService();
+        $result = $service->formatTimestamp(1.99996);
+
+        $this->assertSame('00:00:02,000', $result);
+        $this->assertMatchesRegularExpression('/^\d{2}:\d{2}:\d{2},\d{3}$/', $result);
+    }
 }

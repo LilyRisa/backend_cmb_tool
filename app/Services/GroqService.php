@@ -85,12 +85,16 @@ class GroqService
 
     protected function formatTimestamp(float $seconds): string
     {
-        $milliSeconds = (int) round(($seconds - floor($seconds)) * 1000);
-        $secondsStamp = floor($seconds);
+        $totalMs = (int) round(max(0, $seconds) * 1000);
 
-        $hours = floor($secondsStamp / 3600);
-        $minutes = floor(($secondsStamp % 3600) / 60);
-        $secs = $secondsStamp % 60;
+        $hours = intdiv($totalMs, 3600000);
+        $totalMs -= $hours * 3600000;
+
+        $minutes = intdiv($totalMs, 60000);
+        $totalMs -= $minutes * 60000;
+
+        $secs = intdiv($totalMs, 1000);
+        $milliSeconds = $totalMs - $secs * 1000;
 
         return sprintf("%02d:%02d:%02d,%03d", $hours, $minutes, $secs, $milliSeconds);
     }

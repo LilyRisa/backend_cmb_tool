@@ -86,4 +86,15 @@ class GroqServiceTest extends TestCase
         $this->assertStringContainsString('Hi', $srt);
         @unlink($tmpPath);
     }
+
+    public function test_format_timestamp_carries_milliseconds_that_round_to_1000(): void
+    {
+        $service = new GroqService();
+        $method = new \ReflectionMethod($service, 'formatTimestamp');
+        $method->setAccessible(true);
+
+        $result = $method->invoke($service, 3.99999);
+
+        $this->assertSame('00:00:04,000', $result);
+    }
 }

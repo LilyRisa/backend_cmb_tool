@@ -250,16 +250,16 @@ class SrtTimeRedistributionService
 
     public function formatTimestamp(float $seconds): string
     {
-        $seconds = max(0, $seconds);
+        $totalMs = (int) round(max(0, $seconds) * 1000);
 
-        $h = floor($seconds / 3600);
-        $seconds -= $h * 3600;
+        $h = intdiv($totalMs, 3600000);
+        $totalMs -= $h * 3600000;
 
-        $m = floor($seconds / 60);
-        $seconds -= $m * 60;
+        $m = intdiv($totalMs, 60000);
+        $totalMs -= $m * 60000;
 
-        $s = floor($seconds);
-        $ms = round(($seconds - $s) * 1000);
+        $s = intdiv($totalMs, 1000);
+        $ms = $totalMs - $s * 1000;
 
         return sprintf('%02d:%02d:%02d,%03d', $h, $m, $s, $ms);
     }
