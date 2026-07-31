@@ -38,7 +38,13 @@ return [
             'driver' => 'database',
             'table' => 'jobs',
             'queue' => 'default',
-            'retry_after' => 90,
+            // Must exceed the longest-running job's actual runtime, otherwise the
+            // worker can treat a still-running job's reservation as expired and hand
+            // the same row to a second worker. None of this project's queued jobs are
+            // idempotent (ProcessVideoDub/ProcessSrtGenerate $timeout = 600,
+            // ProcessSrtTranslate = 900 — each would redo STT/translation and call the
+            // provider's paid endpoints a second time). 1200s leaves headroom over 900.
+            'retry_after' => 1200,
             'after_commit' => false,
         ],
 
