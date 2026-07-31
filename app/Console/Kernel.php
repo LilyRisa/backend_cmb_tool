@@ -36,11 +36,11 @@ class Kernel extends ConsoleKernel
             ->where('created_at', '<', now()->subDay())
             ->update(['status' => PendingSubscriptionPayment::STATUS_EXPIRED]))->daily();
 
-        // Reclaim temp audio files left behind by crashed/interrupted SRT jobs (e.g. the
-        // user was deleted mid-pipeline, cascading away the job row before it could run
-        // and call its own cleanup()) — orphans older than a day are safe to remove since
-        // a normal run always deletes its own temp file within minutes.
-        $schedule->call(fn () => $this->pruneOrphanedSrtTempFiles())->daily();
+        // Reclaim temp audio files left behind by crashed/interrupted SRT and video-dub
+        // jobs (e.g. the user was deleted mid-pipeline, cascading away the job row before
+        // it could run and call its own cleanup()) — orphans older than a day are safe to
+        // remove since a normal run always deletes its own temp file within minutes.
+        $schedule->call(fn () => $this->pruneOrphanedTempFiles())->daily();
 
         // Prune old completed/failed SRT job rows so the tables (which store full
         // longText SRT payloads) don't grow unbounded.
@@ -67,17 +67,20 @@ class Kernel extends ConsoleKernel
     }
 
     /**
-     * Delete temp audio uploads in the SRT staging directories that are older than a
-     * day — i.e. orphaned, since a job that actually runs cleans up its own file.
+     * Delete temp audio uploads in the SRT and video-dub staging directories that are
+     * older than a day — i.e. orphaned, since a job that actually runs cleans up its
+     * own file. ProcessVideoDub has the same deserialization-orphan failure mode as the
+     * SRT jobs (SerializesModels throws restoring a cascade-deleted job row, so the
+     * job's own cleanup() never runs and the staged upload leaks permanently).
      *
      * Extracted from the schedule closure so it can be exercised directly by tests.
      */
-    public function pruneOrphanedSrtTempFiles(): void
+    public function pruneOrphanedTempFiles(): void
     {
         $disk = Storage::disk('local');
         $cutoff = now()->subDay()->timestamp;
 
-        foreach (['srt-generate-temp', 'srt-translate-temp'] as $dir) {
+        foreach (['srt-generate-temp', 'srt-translate-temp', 'video-dub-temp'] as $dir) {
             foreach ($disk->files($dir) as $file) {
                 $lastModified = $disk->lastModified($file);
 

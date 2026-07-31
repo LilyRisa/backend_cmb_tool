@@ -120,4 +120,32 @@ class ScheduledCleanupTest extends TestCase
             $disk->delete([$orphan, $fresh]);
         }
     }
+
+    public function test_daily_schedule_reclaims_orphaned_video_dub_temp_files(): void
+    {
+        $disk = Storage::disk('local');
+
+        // VideoDubController::dub() stages uploads into video-dub-temp, and
+        // ProcessVideoDub has the same deserialization-orphan failure mode as the
+        // SRT jobs — a cascade-deleted job row makes SerializesModels throw before
+        // the job's own cleanup() can ever run, leaking the staged upload.
+        $orphan = 'video-dub-temp/orphan-dub.mp3';
+        $fresh = 'video-dub-temp/fresh-dub.mp3';
+
+        $disk->put($orphan, 'stale audio bytes');
+        $disk->put($fresh, 'in-flight audio bytes');
+
+        touch($disk->path($orphan), now()->subDays(2)->timestamp);
+
+        try {
+            $this->travelTo(Carbon::tomorrow()->startOfDay());
+
+            $this->artisan('schedule:run');
+
+            $this->assertFalse($disk->exists($orphan));
+            $this->assertTrue($disk->exists($fresh));
+        } finally {
+            $disk->delete([$orphan, $fresh]);
+        }
+    }
 }
