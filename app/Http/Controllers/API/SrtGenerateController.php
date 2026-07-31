@@ -26,6 +26,14 @@ class SrtGenerateController extends Controller
             ], 403);
         }
 
+        if ($user->monthly_credits + $user->purchased_credits <= 0) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Không đủ credit để thực hiện thao tác này.',
+                'credits_available' => $user->monthly_credits + $user->purchased_credits,
+            ], 402);
+        }
+
         $file = $request->file('file');
         $tempPath = $file->store('srt-generate-temp', 'local');
         $fullTempPath = storage_path('app/' . $tempPath);
@@ -63,6 +71,8 @@ class SrtGenerateController extends Controller
 
     protected function formatJobResponse(SrtGenerateJob $job): array
     {
+        $isCompleted = $job->status === 'completed';
+
         return [
             'success' => $job->status !== 'failed',
             'job_id' => $job->id,
@@ -71,7 +81,7 @@ class SrtGenerateController extends Controller
             'is_final' => in_array($job->status, ['completed', 'failed']),
             'original_filename' => $job->original_filename,
             'language' => $job->language,
-            'srt_content' => $job->srt_content,
+            'srt_content' => $isCompleted ? $job->srt_content : null,
             'characters_used' => $job->characters_used,
             'credits_deducted' => $job->credits_deducted,
             'error' => $job->error,

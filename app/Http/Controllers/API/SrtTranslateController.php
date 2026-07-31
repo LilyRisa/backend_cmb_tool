@@ -26,6 +26,14 @@ class SrtTranslateController extends Controller
             ], 403);
         }
 
+        if ($user->monthly_credits + $user->purchased_credits <= 0) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Không đủ credit để thực hiện thao tác này.',
+                'credits_available' => $user->monthly_credits + $user->purchased_credits,
+            ], 402);
+        }
+
         $file = $request->file('file');
         $tempPath = $file->store('srt-translate-temp', 'local');
         $fullTempPath = storage_path('app/' . $tempPath);
@@ -67,6 +75,8 @@ class SrtTranslateController extends Controller
 
     protected function formatJobResponse(SrtTranslateJob $job): array
     {
+        $isCompleted = $job->status === 'completed';
+
         return [
             'success' => $job->status !== 'failed',
             'job_id' => $job->id,
@@ -76,8 +86,8 @@ class SrtTranslateController extends Controller
             'target_language' => $job->target_language,
             'characters_used' => $job->characters_used,
             'credits_deducted' => $job->credits_deducted,
-            'srt_original' => $job->srt_original,
-            'srt_translated' => $job->srt_translated,
+            'srt_original' => $isCompleted ? $job->srt_original : null,
+            'srt_translated' => $isCompleted ? $job->srt_translated : null,
             'error' => $job->error,
             'created_at' => $job->created_at?->toIso8601String(),
         ];
