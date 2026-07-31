@@ -11,6 +11,7 @@ use App\Http\Controllers\API\ToolSubscriptionController;
 use App\Http\Controllers\API\ToolTtsController;
 use App\Http\Controllers\API\ToolVoiceController;
 use App\Http\Controllers\API\UserController;
+use App\Http\Controllers\API\VideoDubController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/user/login', [UserController::class, 'login'])->middleware('throttle:10,1,login');
@@ -81,4 +82,7 @@ Route::prefix('tool')->middleware(['auth:sanctum', 'token.version'])->group(func
 
     Route::post('/translate-srt', [SrtTranslateController::class, 'translate'])->middleware(['throttle:3,1,translate-srt', 'email.verified']);
     Route::get('/translate-srt/status/{id}', [SrtTranslateController::class, 'status'])->where('id', '[0-9]+');
+
+    Route::post('/video-dub', [VideoDubController::class, 'dub'])->middleware(['throttle:3,1,video-dub', 'email.verified']);
+    Route::get('/video-dub/status/{id}', [VideoDubController::class, 'status'])->where('id', '[0-9]+');
 });
