@@ -5,6 +5,7 @@ use App\Http\Controllers\API\OAuthController;
 use App\Http\Controllers\API\ToolCreditController;
 use App\Http\Controllers\API\ToolFeatureCreditController;
 use App\Http\Controllers\API\ToolSubscriptionController;
+use App\Http\Controllers\API\ToolTtsController;
 use App\Http\Controllers\API\UserController;
 use Illuminate\Support\Facades\Route;
 
@@ -46,4 +47,10 @@ Route::prefix('tool')->middleware(['auth:sanctum', 'token.version'])->group(func
     Route::post('/credits/deduct-feature', [ToolFeatureCreditController::class, 'deductFeature']);
     Route::post('/credits/confirm-feature/{id}', [ToolFeatureCreditController::class, 'confirmFeature'])->where('id', '[0-9]+');
     Route::get('/credits/feature-pricing', [ToolFeatureCreditController::class, 'featurePricing']);
+
+    Route::post('/tts/srt/{voice_id}', [ToolTtsController::class, 'generateFromSrt'])->middleware(['throttle:5,1,tts-srt', 'email.verified']);
+    Route::get('/tts/status/{id}', [ToolTtsController::class, 'status']);
+    Route::get('/tts/history', [ToolTtsController::class, 'history']);
+    Route::delete('/tts/history/{id}', [ToolTtsController::class, 'deleteHistory']);
+    Route::post('/tts/{voice_id}', [ToolTtsController::class, 'generate'])->where('voice_id', '^(?!srt$).+')->middleware('email.verified');
 });

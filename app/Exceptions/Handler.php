@@ -40,4 +40,19 @@ class Handler extends ExceptionHandler
             }
         });
     }
+
+    /**
+     * Determine if the exception handler response should be JSON.
+     *
+     * Same rationale as Authenticate::redirectTo() above: api/* requests that
+     * merely forgot an Accept: application/json header (e.g. a multipart file
+     * upload posted without postJson()) would otherwise fall through to the
+     * default web behavior — a 302 redirect to the previous URL on a
+     * ValidationException — instead of the 422 JSON response every other API
+     * consumer expects.
+     */
+    protected function shouldReturnJson($request, Throwable $e)
+    {
+        return $request->is('api/*') || $request->expectsJson();
+    }
 }
