@@ -67,9 +67,15 @@ class SrtTimeRedistributionServiceTest extends TestCase
     public function test_redistribute_splits_subtitle_exceeding_max_cps(): void
     {
         $service = new SrtTimeRedistributionService();
-        // 100 characters in a 1-second window is far above maxCps (17) — should split into 2+ entries.
-        $text = str_repeat('a', 100);
-        $srt = "1\n00:00:00,000 --> 00:00:01,000\n{$text}\n";
+        // ~99 characters of real words (with spaces) in a 2-second window is far above maxCps (17),
+        // and has natural word-boundary delimiters so splitSubtitle()'s word-splitting branch engages.
+        // A 1-second window was tried first but doesn't survive: splitting a 1s segment produces two
+        // ~0.5s halves, and mergeShortSubtitles() immediately re-merges them (shouldMerge() only
+        // refuses to merge when a segment's own duration is >= 0.6s AND its text is >= 8 chars — a
+        // ~0.5s half fails that duration check, so it gets merged back into a single entry). Using a
+        // 2-second window makes each half ~1.0s (>= 0.6s) with ~49 chars (>= 8), so the split holds.
+        $text = trim(str_repeat('word ', 20)); // "word word ... word" (20 repetitions, ~99 chars)
+        $srt = "1\n00:00:00,000 --> 00:00:02,000\n{$text}\n";
 
         $result = $service->redistribute($srt);
 
