@@ -10,6 +10,7 @@ use App\Http\Controllers\API\ToolFeatureCreditController;
 use App\Http\Controllers\API\ToolSubscriptionController;
 use App\Http\Controllers\API\ToolTtsController;
 use App\Http\Controllers\API\ToolVoiceController;
+use App\Http\Controllers\API\UpdateCheckController;
 use App\Http\Controllers\API\UserController;
 use App\Http\Controllers\API\VideoDubController;
 use App\Http\Controllers\API\ScriptController;
@@ -100,4 +101,9 @@ Route::prefix('tool')->middleware(['auth:sanctum', 'token.version'])->group(func
     // n<=4 cap it bounds worst-case exposure at 240 images/day/account, where the
     // per-minute limit alone left the daily total unbounded.
     Route::post('/generate-image', [ImageGenController::class, 'generate'])->middleware(['throttle:5,1,generate-image', 'throttle:60,1440,generate-image-daily', 'email.verified']);
+});
+
+Route::prefix('cmb')->group(function () {
+    Route::get('/latest-version', [UpdateCheckController::class, 'getCmbLatestVersion'])->middleware('throttle:30,1,cmb-latest-version');
+    Route::get('/versions', [UpdateCheckController::class, 'getCmbVersionList'])->middleware('throttle:30,1,cmb-versions');
 });
