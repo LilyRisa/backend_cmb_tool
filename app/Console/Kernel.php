@@ -42,6 +42,10 @@ class Kernel extends ConsoleKernel
         // remove since a normal run always deletes its own temp file within minutes.
         $schedule->call(fn () => $this->pruneOrphanedTempFiles())->daily();
 
+        // Reclaim old AI-generated images — see pruneOldGeneratedImages() for why a
+        // flat age cutoff is the only signal available for this directory.
+        $schedule->call(fn () => $this->pruneOldGeneratedImages())->daily();
+
         // Prune old completed/failed SRT job rows so the tables (which store full
         // longText SRT payloads) don't grow unbounded.
         $schedule->call(fn () => SrtGenerateJob::whereIn('status', ['completed', 'failed'])
@@ -96,6 +100,26 @@ class Kernel extends ConsoleKernel
                 if ($lastModified !== false && $lastModified < $cutoff) {
                     $disk->delete($file);
                 }
+            }
+        }
+    }
+
+    /**
+     * Reclaim generated images older than 30 days. These are permanent artifacts
+     * with no DB row/history by design (v1 YAGNI — see design spec section 5), so
+     * unlike temp uploads there's no owning record to expire against; a flat
+     * age-based cutoff on the public disk is the only available cleanup signal.
+     */
+    public function pruneOldGeneratedImages(): void
+    {
+        $disk = Storage::disk('public');
+        $cutoff = now()->subDays(30)->timestamp;
+
+        foreach ($disk->files('generated-images') as $file) {
+            $lastModified = $disk->lastModified($file);
+
+            if ($lastModified !== false && $lastModified < $cutoff) {
+                $disk->delete($file);
             }
         }
     }

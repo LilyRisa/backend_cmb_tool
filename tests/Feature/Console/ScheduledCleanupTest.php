@@ -148,4 +148,31 @@ class ScheduledCleanupTest extends TestCase
             $disk->delete([$orphan, $fresh]);
         }
     }
+
+    public function test_daily_schedule_reclaims_old_generated_images(): void
+    {
+        $disk = Storage::disk('public');
+
+        // Generated images have no DB row by design (v1 YAGNI: no history, no
+        // gallery), so unlike the temp uploads above there's no owning record to
+        // expire against — a flat 30-day age cutoff is the only cleanup signal.
+        $old = 'generated-images/old-image.png';
+        $recent = 'generated-images/recent-image.png';
+
+        $disk->put($old, 'old png bytes');
+        $disk->put($recent, 'recent png bytes');
+
+        touch($disk->path($old), now()->subDays(31)->timestamp);
+
+        try {
+            $this->travelTo(Carbon::tomorrow()->startOfDay());
+
+            $this->artisan('schedule:run');
+
+            $this->assertFalse($disk->exists($old));
+            $this->assertTrue($disk->exists($recent));
+        } finally {
+            $disk->delete([$old, $recent]);
+        }
+    }
 }
