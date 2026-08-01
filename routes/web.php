@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\AdminController;
+use App\Http\Controllers\Admin\BlogManagementController;
 use App\Http\Controllers\Admin\ToolManagementController;
 use App\Http\Controllers\Admin\ToolSettingsController;
 use App\Http\Controllers\Admin\VideoDubManagementController;
@@ -50,5 +51,21 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/tools/{id}/edit', [ToolManagementController::class, 'edit'])->name('tools.edit');
         Route::put('/tools/{id}', [ToolManagementController::class, 'update'])->name('tools.update');
         Route::delete('/tools/{id}', [ToolManagementController::class, 'destroy'])->name('tools.destroy');
+
+        Route::prefix('blog')->name('blog.')->group(function () {
+            Route::get('/categories', [BlogManagementController::class, 'categoriesIndex'])->name('categories.index');
+            Route::get('/categories/create', [BlogManagementController::class, 'categoriesCreate'])->name('categories.create');
+            Route::post('/categories', [BlogManagementController::class, 'categoriesStore'])->name('categories.store');
+            Route::get('/categories/{id}/edit', [BlogManagementController::class, 'categoriesEdit'])->name('categories.edit');
+            Route::put('/categories/{id}', [BlogManagementController::class, 'categoriesUpdate'])->name('categories.update');
+            Route::delete('/categories/{id}', [BlogManagementController::class, 'categoriesDestroy'])->name('categories.destroy');
+
+            Route::get('/posts', [BlogManagementController::class, 'postsIndex'])->name('posts.index');
+            Route::get('/posts/create', [BlogManagementController::class, 'postsCreate'])->name('posts.create');
+            Route::post('/posts', [BlogManagementController::class, 'postsStore'])->name('posts.store');
+            Route::get('/posts/{id}/edit', [BlogManagementController::class, 'postsEdit'])->name('posts.edit');
+            Route::put('/posts/{id}', [BlogManagementController::class, 'postsUpdate'])->name('posts.update');
+            Route::delete('/posts/{id}', [BlogManagementController::class, 'postsDestroy'])->name('posts.destroy');
+        });
     });
 });
