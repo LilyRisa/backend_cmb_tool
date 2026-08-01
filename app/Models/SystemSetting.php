@@ -63,6 +63,48 @@ class SystemSetting extends Model
         );
     }
 
+    public static function getImageGenBaseUrl(): string
+    {
+        return static::getValue('image_gen_base_url', 'https://api.openai.com/v1');
+    }
+
+    public static function setImageGenBaseUrl(string $url): static
+    {
+        return static::setValue('image_gen_base_url', $url, false, 'Image Generation API Base URL');
+    }
+
+    public static function getImageGenApiKey(): ?string
+    {
+        $key = static::getValue('image_gen_api_key');
+
+        return $key === '' ? null : $key;
+    }
+
+    public static function setImageGenApiKey(string $apiKey): static
+    {
+        return static::setValue('image_gen_api_key', $apiKey, true, 'Image Generation API Key');
+    }
+
+    public static function getImageGenModel(): string
+    {
+        return static::getValue('image_gen_model', 'gpt-image-1');
+    }
+
+    public static function setImageGenModel(string $model): static
+    {
+        return static::setValue('image_gen_model', $model, false, 'Image Generation Model');
+    }
+
+    public static function getImageGenCreditsPerImage(): int
+    {
+        return (int) static::getValue('image_gen_credits_per_image', 200);
+    }
+
+    public static function setImageGenCreditsPerImage(int $credits): static
+    {
+        return static::setValue('image_gen_credits_per_image', (string) $credits, false, 'Image Generation Credits Per Image');
+    }
+
     public static function getPremiumPlans(): array
     {
         $raw = static::getValue('premium_plans');
