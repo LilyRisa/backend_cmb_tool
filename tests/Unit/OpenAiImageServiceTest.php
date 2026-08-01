@@ -16,7 +16,12 @@ class OpenAiImageServiceTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        Storage::fake('public');
+        // Give the faked public disk its own `url` (as config/filesystems.php does via
+        // APP_URL) so the assertions below can actually distinguish a URL minted from
+        // the public disk from one minted off the DEFAULT disk — without it both fall
+        // back to the identical host-relative "/storage/..." form and the regression
+        // this file guards against would be invisible.
+        Storage::fake('public', ['url' => 'https://public-disk.test/storage']);
         SystemSetting::setImageGenApiKey('sk-test-key');
     }
 
@@ -31,7 +36,9 @@ class OpenAiImageServiceTest extends TestCase
         $urls = $service->generate('a cat wearing a hat');
 
         $this->assertCount(1, $urls);
-        $this->assertStringContainsString('/storage/generated-images/', $urls[0]);
+        // The URL must be minted from the same disk the file was written to —
+        // Storage::url() would resolve against the DEFAULT disk instead.
+        $this->assertStringStartsWith(Storage::disk('public')->url('generated-images/'), $urls[0]);
 
         Http::assertSent(function ($request) {
             return $request->url() === 'https://api.openai.com/v1/images/generations'
@@ -54,7 +61,7 @@ class OpenAiImageServiceTest extends TestCase
         $urls = $service->generate('a dog on the beach');
 
         $this->assertCount(1, $urls);
-        $this->assertStringContainsString('/storage/generated-images/', $urls[0]);
+        $this->assertStringStartsWith(Storage::disk('public')->url('generated-images/'), $urls[0]);
     }
 
     public function test_generate_handles_multiple_images(): void

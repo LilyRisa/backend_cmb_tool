@@ -84,6 +84,6 @@ class OpenAiImageService
             throw new \RuntimeException('Image generation API returned an item with neither b64_json nor url.');
         }
 
-        return Storage::url($filename);
+        return Storage::disk('public')->url($filename);
     }
 }
