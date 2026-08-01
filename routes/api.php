@@ -93,5 +93,11 @@ Route::prefix('tool')->middleware(['auth:sanctum', 'token.version'])->group(func
 
     Route::post('/generate-scenes', [SceneController::class, 'generate'])->middleware(['throttle:3,1,generate-scenes', 'email.verified']);
 
-    Route::post('/generate-image', [ImageGenController::class, 'generate'])->middleware(['throttle:5,1,generate-image', 'email.verified']);
+    // Unlike generate-script/generate-scenes, this endpoint has no server-side credit
+    // check (credit accounting is deliberately client-orchestrated) yet costs orders of
+    // magnitude more per call — a real paid image API vs. a cheap text completion. The
+    // second bucket (60 req / 1440 min = 24h) is a cheap backstop: combined with the
+    // n<=4 cap it bounds worst-case exposure at 240 images/day/account, where the
+    // per-minute limit alone left the daily total unbounded.
+    Route::post('/generate-image', [ImageGenController::class, 'generate'])->middleware(['throttle:5,1,generate-image', 'throttle:60,1440,generate-image-daily', 'email.verified']);
 });

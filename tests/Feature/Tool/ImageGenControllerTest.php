@@ -106,6 +106,18 @@ class ImageGenControllerTest extends TestCase
         });
     }
 
+    public function test_generate_route_has_both_per_minute_and_daily_throttle_buckets(): void
+    {
+        $route = collect(\Illuminate\Support\Facades\Route::getRoutes())
+            ->first(fn ($r) => $r->uri() === 'api/tool/generate-image' && in_array('POST', $r->methods()));
+
+        $this->assertNotNull($route);
+        $middleware = $route->gatherMiddleware();
+
+        $this->assertTrue(collect($middleware)->contains(fn ($m) => str_contains($m, 'throttle:5,1,generate-image')));
+        $this->assertTrue(collect($middleware)->contains(fn ($m) => str_contains($m, 'throttle:60,1440,generate-image-daily')));
+    }
+
     public function test_generate_does_not_touch_user_credits(): void
     {
         Http::fake(['api.openai.com/*' => Http::response(['data' => [['b64_json' => base64_encode('fake-bytes')]]], 200)]);
