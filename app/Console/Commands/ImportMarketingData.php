@@ -36,7 +36,14 @@ class ImportMarketingData extends Command
      */
     private const TABLES = [
         'users',
-        'system_settings',
+        // system_settings is deliberately excluded: 'genmax_api_key' is
+        // encrypted under the SOURCE app's APP_KEY and would be undecryptable
+        // garbage under this app's (different, freshly-generated) key —
+        // worse than unset, since it would look configured and then throw at
+        // use time. The other 3 rows ('credit_multiplier',
+        // 'default_premium_credits') are dead keys nothing in this codebase
+        // reads. Reconfigure genmax_api_key fresh via SystemSetting once the
+        // real plaintext key is available.
         'credit_transactions',
         'pending_credit_topups',
         'feature_credit_usages',
