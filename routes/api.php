@@ -3,6 +3,7 @@
 use App\Http\Controllers\API\AIController;
 use App\Http\Controllers\API\BugReportController;
 use App\Http\Controllers\API\CreditTopupController;
+use App\Http\Controllers\API\FeatureUsageController;
 use App\Http\Controllers\API\OAuthController;
 use App\Http\Controllers\API\SrtGenerateController;
 use App\Http\Controllers\API\SrtTranslateController;
@@ -41,6 +42,7 @@ Route::middleware(['auth:sanctum', 'token.version'])->group(function () {
     Route::match(['put', 'post'], '/account/profile', [UserController::class, 'updateProfile']);
 
     Route::post('/bug-reports', [BugReportController::class, 'submit'])->middleware('throttle:10,1,bug-reports');
+    Route::post('/feature-usage', [FeatureUsageController::class, 'track'])->middleware('throttle:60,1,feature-usage');
 });
 
 Route::middleware(['auth:sanctum', 'token.version'])->group(function () {
