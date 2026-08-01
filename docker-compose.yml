@@ -1,0 +1,124 @@
+x-app-env: &app-env
+  APP_NAME: ${APP_NAME}
+  APP_ENV: ${APP_ENV}
+  APP_KEY: ${APP_KEY}
+  APP_DEBUG: ${APP_DEBUG}
+  APP_URL: ${APP_URL}
+  LOG_CHANNEL: ${LOG_CHANNEL}
+  LOG_LEVEL: ${LOG_LEVEL}
+  DB_CONNECTION: mysql
+  DB_HOST: mysql
+  DB_PORT: 3306
+  DB_DATABASE: ${DB_DATABASE}
+  DB_USERNAME: ${DB_USERNAME}
+  DB_PASSWORD: ${DB_PASSWORD}
+  CACHE_DRIVER: ${CACHE_DRIVER}
+  SESSION_DRIVER: ${SESSION_DRIVER}
+  SESSION_LIFETIME: ${SESSION_LIFETIME}
+  FILESYSTEM_DISK: ${FILESYSTEM_DISK}
+  QUEUE_CONNECTION: ${QUEUE_CONNECTION}
+  MAIL_MAILER: ${MAIL_MAILER}
+  MAIL_HOST: ${MAIL_HOST}
+  MAIL_PORT: ${MAIL_PORT}
+  MAIL_USERNAME: ${MAIL_USERNAME}
+  MAIL_PASSWORD: ${MAIL_PASSWORD}
+  MAIL_ENCRYPTION: ${MAIL_ENCRYPTION}
+  MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS}
+  MAIL_FROM_NAME: ${MAIL_FROM_NAME}
+  SEPAY_WEBHOOK_TOKEN: ${SEPAY_WEBHOOK_TOKEN}
+  SEPAY_MATCH_PATTERN: ${SEPAY_MATCH_PATTERN}
+  SEPAY_ACCOUNT_NUMBER: ${SEPAY_ACCOUNT_NUMBER}
+  SEPAY_ACCOUNT_NAME: ${SEPAY_ACCOUNT_NAME}
+  SEPAY_BANK_NAME: ${SEPAY_BANK_NAME}
+  GEMINI_API_KEY: ${GEMINI_API_KEY}
+  GROQ_API_KEY: ${GROQ_API_KEY}
+  OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cmbcoremkt-backend:latest
+    restart: unless-stopped
+    environment:
+      <<: *app-env
+    volumes:
+      - storage-data:/var/www/html/storage/app
+    networks:
+      - internal
+      - proxy
+    depends_on:
+      mysql:
+        condition: service_healthy
+    # Uncomment if there's no external reverse-proxy network to join (e.g. for
+    # direct testing) — otherwise leave this to the `proxy` network below, which
+    # your existing Portainer nginx routes into.
+    # ports:
+    #   - "8090:80"
+
+  # Dedicated, always-running queue worker — replaces the scheduler-driven
+  # `queue:work --stop-when-empty` drain that Kernel.php used before this
+  # container existed (see the removed entry's history in git blame).
+  worker:
+    image: cmbcoremkt-backend:latest
+    restart: unless-stopped
+    command: ["php", "artisan", "queue:work", "--tries=1", "--timeout=600"]
+    environment:
+      <<: *app-env
+    volumes:
+      - storage-data:/var/www/html/storage/app
+    networks:
+      - internal
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  # Foreground scheduler loop — fires dub:cleanup-stale and every daily
+  # janitor still registered in Kernel.php's schedule().
+  scheduler:
+    image: cmbcoremkt-backend:latest
+    restart: unless-stopped
+    command: ["php", "artisan", "schedule:work"]
+    environment:
+      <<: *app-env
+    volumes:
+      - storage-data:/var/www/html/storage/app
+    networks:
+      - internal
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  mysql:
+    image: mysql:8
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE}
+      MYSQL_USER: ${DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  storage-data:
+  mysql-data:
+
+networks:
+  internal:
+    driver: bridge
+  # External network your existing Portainer nginx/reverse-proxy is attached
+  # to — set PROXY_NETWORK_NAME in the stack's environment variables to match
+  # it exactly (check with `docker network ls` on the host). This network must
+  # already exist; compose will not create it (external: true).
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK_NAME:-nginx-proxy}

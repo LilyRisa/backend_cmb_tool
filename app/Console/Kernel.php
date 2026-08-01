@@ -66,17 +66,12 @@ class Kernel extends ConsoleKernel
         // 5-minute interval under load, so the guard itself is needed.
         $schedule->command('dub:cleanup-stale')->everyFiveMinutes()->withoutOverlapping(10);
 
-        // This project's queue driver is 'database' (no persistent supervisor
-        // process configured) — draining it on a schedule, rather than via a
-        // long-running `queue:work` process, matches how the source project
-        // actually runs its queue in production.
-        //
-        // Same explicit-expiry reasoning as dub:cleanup-stale above — a hard-killed
-        // worker never releases the mutex, and with the 24h default NO queued job
-        // anywhere in the project would be picked up again for a full day, silently.
-        $schedule->command('queue:work --stop-when-empty --tries=1 --timeout=600')
-            ->everyMinute()
-            ->withoutOverlapping(15);
+        // Queue processing is NOT scheduled here — the Docker deployment
+        // (docker-compose.yml) runs a dedicated, always-running `worker`
+        // container (`php artisan queue:work`) instead of draining the queue
+        // on a schedule. A scheduler-driven drain only made sense in an
+        // environment with no persistent supervisor process available; Docker
+        // makes a real long-running worker trivial, so use that instead.
     }
 
     /**
