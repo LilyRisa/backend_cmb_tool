@@ -286,7 +286,11 @@ PROMPT;
         for ($attempt = 1; $attempt <= self::MAX_RETRIES; $attempt++) {
             try {
                 return $this->callOpenRouter($prompt);
-            } catch (\RuntimeException $e) {
+            // ConnectionException (cURL timeout / DNS / connection reset) is NOT a
+            // RuntimeException subclass — without it here, a timed-out call escapes
+            // the retry loop on the first attempt and surfaces raw "cURL error 28"
+            // text to the user instead of retrying. Matches OpenRouterService.
+            } catch (\RuntimeException|\Illuminate\Http\Client\ConnectionException $e) {
                 $lastException = $e;
 
                 Log::warning("ScriptService: OpenRouter attempt {$attempt}/" . self::MAX_RETRIES . " failed", [

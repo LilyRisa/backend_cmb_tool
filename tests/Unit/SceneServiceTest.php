@@ -73,4 +73,22 @@ class SceneServiceTest extends TestCase
 
         $service->generateScenes('Some script text.', 'hài hước', 15);
     }
+
+    public function test_generate_scenes_retries_and_eventually_throws_on_connection_timeout(): void
+    {
+        // ConnectionException is what Http::post() throws on a cURL timeout / DNS
+        // failure — it is not a RuntimeException, so it must be caught explicitly
+        // or it escapes the retry loop on attempt 1 with a raw cURL message.
+        Http::fake(function () {
+            throw new \Illuminate\Http\Client\ConnectionException('Connection timed out');
+        });
+
+        $service = new SceneService();
+
+        $this->expectException(\RuntimeException::class);
+        // SceneService appends the last exception's own message, unlike ScriptService.
+        $this->expectExceptionMessageMatches('/^Scene extraction failed after multiple attempts\./');
+
+        $service->generateScenes('Some script text.', 'hài hước', 15);
+    }
 }

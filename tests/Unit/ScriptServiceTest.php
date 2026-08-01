@@ -76,6 +76,23 @@ class ScriptServiceTest extends TestCase
         $service->generate('topic', 20, 'context', 'language', null);
     }
 
+    public function test_generate_retries_and_eventually_throws_on_connection_timeout(): void
+    {
+        // ConnectionException is what Http::post() throws on a cURL timeout / DNS
+        // failure — it is not a RuntimeException, so it must be caught explicitly
+        // or it escapes the retry loop on attempt 1 with a raw cURL message.
+        Http::fake(function () {
+            throw new \Illuminate\Http\Client\ConnectionException('Connection timed out');
+        });
+
+        $service = new ScriptService();
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Script generation failed after multiple attempts. Please try again later.');
+
+        $service->generate('topic', 20, 'context', 'language', null);
+    }
+
     public function test_count_words_handles_vietnamese_text(): void
     {
         $this->assertEquals(4, ScriptService::countWords('Xin chào thế giới'));
