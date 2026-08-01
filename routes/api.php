@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\API\AIController;
+use App\Http\Controllers\API\BugReportController;
 use App\Http\Controllers\API\CreditTopupController;
 use App\Http\Controllers\API\OAuthController;
 use App\Http\Controllers\API\SrtGenerateController;
@@ -38,6 +39,8 @@ Route::middleware(['auth:sanctum', 'token.version'])->group(function () {
     Route::put('/account/change-password', [UserController::class, 'updatePassword']);
     Route::put('/account/change-name', [UserController::class, 'updateName']);
     Route::match(['put', 'post'], '/account/profile', [UserController::class, 'updateProfile']);
+
+    Route::post('/bug-reports', [BugReportController::class, 'submit'])->middleware('throttle:10,1,bug-reports');
 });
 
 Route::middleware(['auth:sanctum', 'token.version'])->group(function () {

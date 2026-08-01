@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Admin\AdminController;
 use App\Http\Controllers\Admin\BlogManagementController;
+use App\Http\Controllers\Admin\BugReportManagementController;
 use App\Http\Controllers\Admin\InquiryManagementController;
 use App\Http\Controllers\Admin\ToolManagementController;
 use App\Http\Controllers\Admin\ToolSettingsController;
@@ -74,5 +75,8 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
         Route::get('/preorders', [InquiryManagementController::class, 'preordersIndex'])->name('preorders.index');
         Route::put('/preorders/{id}', [InquiryManagementController::class, 'preordersUpdateStatus'])->name('preorders.update');
+
+        Route::get('/bug-reports', [BugReportManagementController::class, 'index'])->name('bug-reports.index');
+        Route::put('/bug-reports/{id}', [BugReportManagementController::class, 'updateStatus'])->name('bug-reports.update');
     });
 });
