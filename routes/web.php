@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Admin\AdminController;
 use App\Http\Controllers\Admin\BlogManagementController;
+use App\Http\Controllers\Admin\InquiryManagementController;
 use App\Http\Controllers\Admin\ToolManagementController;
 use App\Http\Controllers\Admin\ToolSettingsController;
 use App\Http\Controllers\Admin\VideoDubManagementController;
@@ -67,5 +68,11 @@ Route::prefix('admin')->name('admin.')->group(function () {
             Route::put('/posts/{id}', [BlogManagementController::class, 'postsUpdate'])->name('posts.update');
             Route::delete('/posts/{id}', [BlogManagementController::class, 'postsDestroy'])->name('posts.destroy');
         });
+
+        Route::get('/contact-messages', [InquiryManagementController::class, 'contactMessagesIndex'])->name('contact-messages.index');
+        Route::put('/contact-messages/{id}', [InquiryManagementController::class, 'contactMessagesUpdateStatus'])->name('contact-messages.update');
+
+        Route::get('/preorders', [InquiryManagementController::class, 'preordersIndex'])->name('preorders.index');
+        Route::put('/preorders/{id}', [InquiryManagementController::class, 'preordersUpdateStatus'])->name('preorders.update');
     });
 });
