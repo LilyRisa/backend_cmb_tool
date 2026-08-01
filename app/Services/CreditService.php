@@ -121,6 +121,13 @@ class CreditService
 
     public static function getFeaturePricing(): array
     {
-        return self::FEATURE_PRICING;
+        // image_generation's real price lives in SystemSetting (admin-mutable at
+        // runtime), not in the constant — without merging it in, the pricing API
+        // exposes only max_count and the client, which orchestrates the credit
+        // deduction itself, has no way to display or reconcile cost beforehand.
+        $pricing = self::FEATURE_PRICING;
+        $pricing['image_generation']['credits_per_image'] = SystemSetting::getImageGenCreditsPerImage();
+
+        return $pricing;
     }
 }

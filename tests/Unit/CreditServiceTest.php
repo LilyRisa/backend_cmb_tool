@@ -54,6 +54,16 @@ class CreditServiceTest extends TestCase
         $this->assertEquals(140, $pricing['create_video_script']['credits_per_minute']);
     }
 
+    public function test_get_feature_pricing_includes_the_live_image_generation_price(): void
+    {
+        \App\Models\SystemSetting::setImageGenCreditsPerImage(275);
+
+        $pricing = CreditService::getFeaturePricing();
+
+        $this->assertEquals(275, $pricing['image_generation']['credits_per_image']);
+        $this->assertEquals(4, $pricing['image_generation']['max_count']);
+    }
+
     public function test_calculate_feature_credits_for_image_generation_uses_configured_price_per_image(): void
     {
         \App\Models\SystemSetting::setImageGenCreditsPerImage(150);
