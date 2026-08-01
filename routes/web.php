@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\AdminController;
+use App\Http\Controllers\Admin\ToolManagementController;
 use App\Http\Controllers\Admin\ToolSettingsController;
 use App\Http\Controllers\Admin\VideoDubManagementController;
 use App\Http\Controllers\API\OAuthController;
@@ -42,5 +43,12 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
         Route::get('/tool-settings', [ToolSettingsController::class, 'index'])->name('tool-settings.index');
         Route::post('/tool-settings', [ToolSettingsController::class, 'update'])->name('tool-settings.update');
+
+        Route::get('/tools', [ToolManagementController::class, 'index'])->name('tools.index');
+        Route::get('/tools/create', [ToolManagementController::class, 'create'])->name('tools.create');
+        Route::post('/tools', [ToolManagementController::class, 'store'])->name('tools.store');
+        Route::get('/tools/{id}/edit', [ToolManagementController::class, 'edit'])->name('tools.edit');
+        Route::put('/tools/{id}', [ToolManagementController::class, 'update'])->name('tools.update');
+        Route::delete('/tools/{id}', [ToolManagementController::class, 'destroy'])->name('tools.destroy');
     });
 });
