@@ -17,6 +17,11 @@ fi
 
 php artisan storage:link 2>/dev/null || true
 
+# Deferred from the build stage (see Dockerfile's vendor stage comment) —
+# real environment variables are available now, so any boot-time config
+# guard (e.g. the production SEPAY_WEBHOOK_TOKEN check) evaluates correctly.
+php artisan package:discover --ansi
+
 php artisan config:cache
 php artisan route:cache
 php artisan view:cache

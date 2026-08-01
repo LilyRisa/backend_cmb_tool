@@ -15,7 +15,14 @@ RUN composer install \
 
 COPY . .
 
-RUN composer dump-autoload --optimize --no-dev
+# --no-scripts: the composer.json post-autoload-dump hook runs
+# `artisan package:discover`, which boots the full framework — at build time
+# there is no .env and no injected environment variables (docker build never
+# sees docker-compose's `environment:` block), so any boot-time config guard
+# (e.g. AppServiceProvider's production SEPAY_WEBHOOK_TOKEN check) would fail
+# here regardless of what's configured for the real deployment. Defer package
+# discovery to the entrypoint, where real runtime env vars are present.
+RUN composer dump-autoload --optimize --no-dev --no-scripts
 
 # ---- Stage 2: runtime image (nginx + php-fpm, managed by supervisord) ----
 FROM php:8.2-fpm-alpine
