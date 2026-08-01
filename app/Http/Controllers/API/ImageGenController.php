@@ -29,10 +29,14 @@ class ImageGenController extends Controller
         }
 
         try {
+            // `size`/`n` are nullable in GenerateImageRequest, so a client may send them
+            // explicitly as null. input()'s default only applies when the KEY IS ABSENT —
+            // a present-but-null value returns null, which would hit the non-nullable
+            // string $size param (TypeError -> 500) and cast to "n": 0 for the provider.
             $images = $this->imageService->generate(
                 prompt: $request->input('prompt'),
-                size:   $request->input('size', '1024x1024'),
-                n:      (int) $request->input('n', 1),
+                size:   $request->input('size') ?? '1024x1024',
+                n:      (int) ($request->input('n') ?? 1),
             );
 
             Log::info('ImageGenController: images generated successfully', [

@@ -91,6 +91,21 @@ class ImageGenControllerTest extends TestCase
             ->assertJsonPath('success', false);
     }
 
+    public function test_generate_treats_explicit_null_size_and_n_as_defaults(): void
+    {
+        Http::fake(['api.openai.com/*' => Http::response(['data' => [['b64_json' => base64_encode('fake-bytes')]]], 200)]);
+        $user = $this->premiumUser();
+
+        $response = $this->withHeaders($this->authHeader($user))
+            ->postJson('/api/tool/generate-image', ['prompt' => 'a cat wearing a hat', 'size' => null, 'n' => null]);
+
+        $response->assertOk()->assertJsonPath('success', true);
+
+        Http::assertSent(function ($request) {
+            return $request['size'] === '1024x1024' && $request['n'] === 1;
+        });
+    }
+
     public function test_generate_does_not_touch_user_credits(): void
     {
         Http::fake(['api.openai.com/*' => Http::response(['data' => [['b64_json' => base64_encode('fake-bytes')]]], 200)]);
