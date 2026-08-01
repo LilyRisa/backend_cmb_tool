@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\AdminController;
+use App\Http\Controllers\Admin\ToolSettingsController;
 use App\Http\Controllers\Admin\VideoDubManagementController;
 use App\Http\Controllers\API\OAuthController;
 use App\Http\Controllers\API\UserController;
@@ -38,5 +39,8 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
         Route::get('/videodub', [VideoDubManagementController::class, 'index'])->name('videodub.index');
         Route::get('/videodub/{id}', [VideoDubManagementController::class, 'show'])->name('videodub.show');
+
+        Route::get('/tool-settings', [ToolSettingsController::class, 'index'])->name('tool-settings.index');
+        Route::post('/tool-settings', [ToolSettingsController::class, 'update'])->name('tool-settings.update');
     });
 });

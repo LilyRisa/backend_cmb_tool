@@ -1,0 +1,43 @@
+<?php
+
+namespace App\Http\Controllers\Admin;
+
+use App\Http\Controllers\Controller;
+use App\Models\SystemSetting;
+use Illuminate\Http\Request;
+use Illuminate\Http\RedirectResponse;
+
+class ToolSettingsController extends Controller
+{
+    public function index()
+    {
+        $settings = [
+            'image_gen_base_url' => SystemSetting::getImageGenBaseUrl(),
+            'image_gen_model' => SystemSetting::getImageGenModel(),
+            'image_gen_credits_per_image' => SystemSetting::getImageGenCreditsPerImage(),
+            'image_gen_api_key_set' => SystemSetting::getImageGenApiKey() !== null,
+        ];
+
+        return view('admin.tool-settings.index', compact('settings'));
+    }
+
+    public function update(Request $request): RedirectResponse
+    {
+        $request->validate([
+            'image_gen_base_url' => 'required|url',
+            'image_gen_model' => 'required|string|max:100',
+            'image_gen_credits_per_image' => 'required|integer|min:1',
+            'image_gen_api_key' => 'nullable|string|max:500',
+        ]);
+
+        SystemSetting::setImageGenBaseUrl($request->input('image_gen_base_url'));
+        SystemSetting::setImageGenModel($request->input('image_gen_model'));
+        SystemSetting::setImageGenCreditsPerImage((int) $request->input('image_gen_credits_per_image'));
+
+        if ($request->filled('image_gen_api_key')) {
+            SystemSetting::setImageGenApiKey($request->input('image_gen_api_key'));
+        }
+
+        return redirect()->route('admin.tool-settings.index')->with('success', 'Đã lưu cấu hình tạo hình ảnh.');
+    }
+}
