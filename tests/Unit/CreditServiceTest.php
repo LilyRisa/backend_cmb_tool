@@ -53,4 +53,31 @@ class CreditServiceTest extends TestCase
         $this->assertArrayHasKey('create_video_script', $pricing);
         $this->assertEquals(140, $pricing['create_video_script']['credits_per_minute']);
     }
+
+    public function test_calculate_feature_credits_for_image_generation_uses_configured_price_per_image(): void
+    {
+        \App\Models\SystemSetting::setImageGenCreditsPerImage(150);
+
+        $result = CreditService::calculateFeatureCredits('image_generation', 3);
+
+        $this->assertEquals([
+            'feature' => 'image_generation',
+            'duration_seconds' => 3,
+            'credits' => 450,
+        ], $result);
+    }
+
+    public function test_calculate_feature_credits_for_image_generation_uses_default_price_when_unset(): void
+    {
+        $result = CreditService::calculateFeatureCredits('image_generation', 1);
+
+        $this->assertEquals(200, $result['credits']);
+    }
+
+    public function test_calculate_feature_credits_throws_when_image_count_exceeds_max(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        CreditService::calculateFeatureCredits('image_generation', 5);
+    }
 }

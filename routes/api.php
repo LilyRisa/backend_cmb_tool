@@ -14,6 +14,7 @@ use App\Http\Controllers\API\UserController;
 use App\Http\Controllers\API\VideoDubController;
 use App\Http\Controllers\API\ScriptController;
 use App\Http\Controllers\API\SceneController;
+use App\Http\Controllers\API\ImageGenController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/user/login', [UserController::class, 'login'])->middleware('throttle:10,1,login');
@@ -91,4 +92,6 @@ Route::prefix('tool')->middleware(['auth:sanctum', 'token.version'])->group(func
     Route::post('/generate-script', [ScriptController::class, 'generate'])->middleware(['throttle:5,1,generate-script', 'email.verified']);
 
     Route::post('/generate-scenes', [SceneController::class, 'generate'])->middleware(['throttle:3,1,generate-scenes', 'email.verified']);
+
+    Route::post('/generate-image', [ImageGenController::class, 'generate'])->middleware(['throttle:5,1,generate-image', 'email.verified']);
 });

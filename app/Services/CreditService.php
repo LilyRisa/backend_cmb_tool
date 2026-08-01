@@ -65,6 +65,9 @@ class CreditService
             'credits_per_minute' => 140,
             'max_duration_seconds' => 1200,
         ],
+        'image_generation' => [
+            'max_count' => 4,
+        ],
     ];
 
     public static function calculateFeatureCredits(string $feature, int $durationSeconds): ?array
@@ -74,6 +77,30 @@ class CreditService
         }
 
         $pricing = self::FEATURE_PRICING[$feature];
+
+        // image_generation is priced per-image (count-based), not per-minute — the
+        // incoming $durationSeconds value represents the image count (n) for this
+        // feature specifically, and the credit-per-image rate is admin-configurable
+        // via SystemSetting rather than a hardcoded constant.
+        if ($feature === 'image_generation') {
+            $maxCount = $pricing['max_count'];
+            $count = $durationSeconds;
+
+            if ($count < 1 || $count > $maxCount) {
+                throw new \InvalidArgumentException(
+                    "Image count must be between 1 and {$maxCount} for feature '{$feature}'."
+                );
+            }
+
+            $creditsPerImage = SystemSetting::getImageGenCreditsPerImage();
+
+            return [
+                'feature' => $feature,
+                'duration_seconds' => $count,
+                'credits' => $count * $creditsPerImage,
+            ];
+        }
+
         $maxDuration = $pricing['max_duration_seconds'];
 
         if ($durationSeconds < 1 || $durationSeconds > $maxDuration) {
