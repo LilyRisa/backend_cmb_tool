@@ -33,7 +33,13 @@ class BugReportControllerTest extends TestCase
 
     public function test_submit_uploads_screenshots_to_local_storage(): void
     {
-        Storage::fake('public');
+        // Give the faked public disk its own `url` (as config/filesystems.php does via
+        // APP_URL) so the assertion below can actually distinguish a URL minted from
+        // the public disk from one minted off the DEFAULT disk — without it both fall
+        // back to the identical host-relative "/storage/..." form and a regression to
+        // the bare Storage::url() bug would be invisible. Mirrors the pattern in
+        // tests/Unit/OpenAiImageServiceTest.php.
+        Storage::fake('public', ['url' => 'https://public-disk.test/storage']);
         $user = User::factory()->create();
         $file = UploadedFile::fake()->image('screenshot.png');
 
@@ -46,7 +52,9 @@ class BugReportControllerTest extends TestCase
         $response->assertStatus(201);
         $report = \App\Models\BugReport::first();
         $this->assertEquals(1, $report->screenshot_count);
-        $this->assertStringContainsString('/storage/bug-reports/', $report->screenshots[0]);
+        // The URL must be minted from the same disk the file was written to —
+        // Storage::url() would resolve against the DEFAULT disk instead.
+        $this->assertStringStartsWith(Storage::disk('public')->url('bug-reports/'), $report->screenshots[0]);
     }
 
     public function test_submit_requires_description(): void
