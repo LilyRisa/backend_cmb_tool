@@ -18,7 +18,7 @@ class SubmitBugReportRequest extends FormRequest
             'app_version' => 'nullable|string|max:50',
             'device_info' => 'nullable|string|max:1000',
             'screenshots' => 'nullable|array|max:5',
-            'screenshots.*' => 'file|image|max:5120',
+            'screenshots.*' => 'file|image|mimes:jpg,jpeg,png,gif,webp|max:5120',
         ];
     }
 

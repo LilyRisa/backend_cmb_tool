@@ -57,6 +57,50 @@ class BugReportControllerTest extends TestCase
         $this->assertStringStartsWith(Storage::disk('public')->url('bug-reports/'), $report->screenshots[0]);
     }
 
+    public function test_submit_derives_stored_extension_from_content_not_client_filename(): void
+    {
+        // Regression test for C1: the stored filename's extension must be derived
+        // from the file's actual (content-sniffed) type, never from the client-
+        // supplied filename — otherwise an attacker can control the extension a
+        // real image gets stored under.
+        //
+        // Note: this uses a client filename of "payload.pht" rather than the more
+        // obvious "payload.php". Laravel 10.50's `image`/`mimes` validation rules
+        // already contain their own client-filename blocklist (`php`, `php3-8`,
+        // `phtml`, `phar` — see Illuminate\Validation\Concerns\ValidatesAttributes
+        // ::shouldBlockPhpUpload()) that rejects an upload named "payload.php"
+        // at the validation layer (422) regardless of this controller's code, which
+        // would make a "payload.php" test pass even without this fix and prove
+        // nothing about the controller. ".pht" is a well-known PHP-execution
+        // bypass extension that is NOT in that upstream blocklist, so it reaches
+        // the controller and genuinely exercises the fix: content-sniffed
+        // extension() must resolve it to a real image extension, not ".pht".
+        Storage::fake('public');
+        $user = User::factory()->create();
+        // UploadedFile::fake()->image() always generates genuine image bytes, but in
+        // test mode Illuminate\Http\Testing\File reports its MIME type from the given
+        // filename rather than sniffing the content (unlike real HTTP uploads, where
+        // Symfony's UploadedFile::getMimeType() sniffs via finfo). Force the reported
+        // MIME type to a real image type here to faithfully simulate a real upload
+        // whose bytes content-sniff as an image despite an attacker-chosen filename.
+        $file = UploadedFile::fake()->image('payload.pht')->mimeType('image/jpeg');
+
+        $response = $this->withHeaders($this->authHeader($user))
+            ->post('/api/bug-reports', [
+                'description' => 'Bug with maliciously named screenshot',
+                'screenshots' => [$file],
+            ]);
+
+        $response->assertStatus(201);
+
+        $storedFiles = Storage::disk('public')->allFiles('bug-reports');
+        $this->assertNotEmpty($storedFiles);
+        foreach ($storedFiles as $storedFile) {
+            $this->assertStringEndsNotWith('.pht', $storedFile);
+            $this->assertStringEndsNotWith('.php', $storedFile);
+        }
+    }
+
     public function test_submit_requires_description(): void
     {
         $user = User::factory()->create();

@@ -55,6 +55,29 @@ class BlogManagementControllerTest extends TestCase
         $this->assertDatabaseHas('blog_posts', ['slug' => 'how-to-automate-video-marketing', 'author_id' => $admin->id]);
     }
 
+    public function test_category_store_rejects_duplicate_slug(): void
+    {
+        BlogCategory::factory()->create(['slug' => 'marketing-tips']);
+
+        $this->actingAsAdmin()
+            ->post('/admin/blog/categories', [
+                'name' => 'Marketing Tips Again',
+                'slug' => 'marketing-tips',
+            ])
+            ->assertSessionHasErrors(['slug']);
+    }
+
+    public function test_category_update_rejects_slug_already_used_by_another_category(): void
+    {
+        BlogCategory::factory()->create(['slug' => 'taken-slug']);
+        $category = BlogCategory::factory()->create(['slug' => 'my-own-slug']);
+
+        $this->actingAsAdmin()->put("/admin/blog/categories/{$category->id}", [
+            'name' => $category->name,
+            'slug' => 'taken-slug',
+        ])->assertSessionHasErrors(['slug']);
+    }
+
     public function test_post_store_validates_required_fields(): void
     {
         $this->actingAsAdmin()
@@ -76,6 +99,32 @@ class BlogManagementControllerTest extends TestCase
 
         $response->assertRedirect(route('admin.blog.posts.index'));
         $this->assertEquals('New title', $post->fresh()->title);
+    }
+
+    public function test_post_store_rejects_duplicate_slug(): void
+    {
+        BlogPost::factory()->create(['slug' => 'how-to-automate-video-marketing']);
+
+        $this->actingAsAdmin()
+            ->post('/admin/blog/posts', [
+                'title' => 'Another article',
+                'slug' => 'how-to-automate-video-marketing',
+                'content' => 'Some content.',
+            ])
+            ->assertSessionHasErrors(['slug']);
+    }
+
+    public function test_post_update_rejects_slug_already_used_by_another_post(): void
+    {
+        BlogPost::factory()->create(['slug' => 'taken-slug']);
+        $post = BlogPost::factory()->create(['slug' => 'my-own-slug']);
+
+        $this->actingAsAdmin()->put("/admin/blog/posts/{$post->id}", [
+            'category_id' => $post->category_id,
+            'title' => $post->title,
+            'slug' => 'taken-slug',
+            'content' => $post->content,
+        ])->assertSessionHasErrors(['slug']);
     }
 
     public function test_post_index_rejects_unauthenticated_requests(): void

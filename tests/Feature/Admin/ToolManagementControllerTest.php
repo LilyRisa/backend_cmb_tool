@@ -75,6 +75,35 @@ class ToolManagementControllerTest extends TestCase
         $this->assertEquals('new changelog', $tool->fresh()->changelog);
     }
 
+    public function test_store_rejects_duplicate_slug(): void
+    {
+        Tool::factory()->create(['slug' => 'cmb-core-marketing-500']);
+
+        $this->actingAsAdmin()
+            ->post('/admin/tools', [
+                'name' => 'Another Tool',
+                'slug' => 'cmb-core-marketing-500',
+                'type' => 'cmb_core',
+                'version' => '1.0.0',
+                'download_url' => 'https://cdn.cmbcore.com/y.exe',
+            ])
+            ->assertSessionHasErrors(['slug']);
+    }
+
+    public function test_update_rejects_slug_already_used_by_another_tool(): void
+    {
+        Tool::factory()->create(['slug' => 'taken-slug']);
+        $tool = Tool::factory()->create(['slug' => 'my-own-slug']);
+
+        $this->actingAsAdmin()->put("/admin/tools/{$tool->id}", [
+            'name' => $tool->name,
+            'slug' => 'taken-slug',
+            'type' => $tool->type,
+            'version' => $tool->version,
+            'download_url' => $tool->download_url,
+        ])->assertSessionHasErrors(['slug']);
+    }
+
     public function test_destroy_removes_a_tool(): void
     {
         $tool = Tool::factory()->create();

@@ -17,7 +17,7 @@ class BugReportController extends Controller
 
         $screenshotUrls = [];
         foreach ($request->file('screenshots', []) as $file) {
-            $filename = 'bug-reports/' . Str::uuid() . '.' . $file->getClientOriginalExtension();
+            $filename = 'bug-reports/' . Str::uuid() . '.' . $file->extension();
             Storage::disk('public')->put($filename, file_get_contents($file->getRealPath()));
             $screenshotUrls[] = Storage::disk('public')->url($filename);
         }

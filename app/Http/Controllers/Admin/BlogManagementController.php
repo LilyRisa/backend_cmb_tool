@@ -7,6 +7,7 @@ use App\Models\BlogCategory;
 use App\Models\BlogPost;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class BlogManagementController extends Controller
 {
@@ -42,7 +43,7 @@ class BlogManagementController extends Controller
     public function categoriesUpdate(Request $request, int $id): RedirectResponse
     {
         $category = BlogCategory::findOrFail($id);
-        $category->update($this->validatedCategory($request));
+        $category->update($this->validatedCategory($request, $category->id));
 
         return redirect()->route('admin.blog.categories.index')->with('success', 'Đã cập nhật.');
     }
@@ -54,11 +55,11 @@ class BlogManagementController extends Controller
         return redirect()->route('admin.blog.categories.index')->with('success', 'Đã xoá.');
     }
 
-    private function validatedCategory(Request $request): array
+    private function validatedCategory(Request $request, ?int $ignoreId = null): array
     {
         $data = $request->validate([
             'name' => 'required|string|max:191',
-            'slug' => 'required|string|max:191',
+            'slug' => ['required', 'string', 'max:191', Rule::unique('blog_categories', 'slug')->ignore($ignoreId)],
             'description' => 'nullable|string',
             'order' => 'nullable|integer|min:0',
             'is_active' => 'nullable|boolean',
@@ -121,7 +122,7 @@ class BlogManagementController extends Controller
     public function postsUpdate(Request $request, int $id): RedirectResponse
     {
         $post = BlogPost::findOrFail($id);
-        $validated = $this->validatedPost($request);
+        $validated = $this->validatedPost($request, $post->id);
 
         if ($validated['is_published'] && empty($post->published_at) && empty($validated['published_at'])) {
             $validated['published_at'] = now();
@@ -139,12 +140,12 @@ class BlogManagementController extends Controller
         return redirect()->route('admin.blog.posts.index')->with('success', 'Đã xoá.');
     }
 
-    private function validatedPost(Request $request): array
+    private function validatedPost(Request $request, ?int $ignoreId = null): array
     {
         $data = $request->validate([
             'category_id' => 'nullable|exists:blog_categories,id',
             'title' => 'required|string|max:191',
-            'slug' => 'required|string|max:191',
+            'slug' => ['required', 'string', 'max:191', Rule::unique('blog_posts', 'slug')->ignore($ignoreId)],
             'excerpt' => 'nullable|string|max:500',
             'content' => 'required|string',
             'featured_image' => 'nullable|string|max:500',

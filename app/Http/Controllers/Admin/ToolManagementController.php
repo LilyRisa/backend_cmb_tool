@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Tool;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class ToolManagementController extends Controller
 {
@@ -51,7 +52,7 @@ class ToolManagementController extends Controller
     public function update(Request $request, int $id): RedirectResponse
     {
         $tool = Tool::findOrFail($id);
-        $validated = $this->validated($request);
+        $validated = $this->validated($request, $tool->id);
 
         if ($validated['is_latest'] ?? false) {
             Tool::where('type', $validated['type'])->where('id', '!=', $tool->id)->update(['is_latest' => false]);
@@ -69,11 +70,11 @@ class ToolManagementController extends Controller
         return redirect()->route('admin.tools.index')->with('success', 'Đã xoá.');
     }
 
-    private function validated(Request $request): array
+    private function validated(Request $request, ?int $ignoreId = null): array
     {
         $data = $request->validate([
             'name' => 'required|string|max:191',
-            'slug' => 'required|string|max:191',
+            'slug' => ['required', 'string', 'max:191', Rule::unique('tools', 'slug')->ignore($ignoreId)],
             'type' => 'required|string|max:50',
             'version' => 'required|string|max:50',
             'description' => 'nullable|string',
