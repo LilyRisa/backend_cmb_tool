@@ -44,4 +44,37 @@ class UpdateCheckControllerTest extends TestCase
         $response->assertOk()->assertJsonCount(2, 'data');
         $this->assertEquals('4.2.0', $response->json('data.0.version'));
     }
+
+    public function test_legacy_latest_requires_no_type_param_and_matches_old_backends_response_shape(): void
+    {
+        Tool::factory()->create(['type' => 'cmb_core', 'is_active' => true, 'is_latest' => false]);
+        $latest = Tool::factory()->create([
+            'type' => 'cmb_core',
+            'version' => '4.2.1',
+            'is_active' => true,
+            'is_latest' => true,
+            'file_size' => '202 MB',
+            'sha256' => str_repeat('a', 64),
+        ]);
+
+        // No ?type= — the legacy route hardcodes 'cmb_core', unlike getCmbLatestVersion().
+        $response = $this->getJson('/api/cmb/latest');
+
+        $response->assertOk()->assertJsonPath('success', true);
+        $this->assertEquals('4.2.1', $response->json('data.version'));
+        $this->assertEquals($latest->download_url, $response->json('data.download_url'));
+        $this->assertEquals($latest->download_url, $response->json('data.direct_url'));
+        $this->assertEquals(str_repeat('a', 64), $response->json('data.sha256'));
+        $this->assertEquals('202 MB', $response->json('data.file_size_formatted'));
+        // 202 MB → raw byte count, not the formatted string — the client's
+        // download-progress math divides by this and needs a number.
+        $this->assertEquals((int) round(202 * 1024 * 1024), $response->json('data.file_size'));
+    }
+
+    public function test_legacy_latest_404s_when_no_active_latest_tool_exists(): void
+    {
+        Tool::factory()->create(['type' => 'cmb_core', 'is_active' => false, 'is_latest' => true]);
+
+        $this->getJson('/api/cmb/latest')->assertStatus(404)->assertJsonPath('success', false);
+    }
 }

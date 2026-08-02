@@ -111,4 +111,9 @@ Route::prefix('tool')->middleware(['auth:sanctum', 'token.version'])->group(func
 Route::prefix('cmb')->group(function () {
     Route::get('/latest-version', [UpdateCheckController::class, 'getCmbLatestVersion'])->middleware('throttle:30,1,cmb-latest-version');
     Route::get('/versions', [UpdateCheckController::class, 'getCmbVersionList'])->middleware('throttle:30,1,cmb-versions');
+
+    // Legacy alias — matches the old ESP32-monolith backend's path/response shape
+    // (no `type` query param, different field names) so cmb_audio_tool_marketing's
+    // UpdateService.js keeps working unmodified after its API_BASE cutover.
+    Route::get('/latest', [UpdateCheckController::class, 'getCmbLatestVersionLegacy'])->middleware('throttle:30,1,cmb-latest-legacy');
 });

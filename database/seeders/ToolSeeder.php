@@ -22,7 +22,11 @@ class ToolSeeder extends Seeder
             ['version' => '4.1.8', 'changelog' => 'Thêm tính năng tạo video story AI', 'file_size' => '201.74 MB', 'released_at' => '2026-03-19', 'download_count' => 0],
             ['version' => '4.1.9', 'changelog' => 'fix bug tạo video story AI', 'file_size' => '201.79 MB', 'released_at' => '2026-03-20', 'download_count' => 0],
             ['version' => '4.2.0', 'changelog' => 'fix bug get page facebook', 'file_size' => '201.79 MB', 'released_at' => '2026-03-21', 'download_count' => 1],
-            ['version' => '4.2.1', 'changelog' => 'Fix lỗi đăng nhập và xử lý facebook', 'file_size' => '202 MB', 'released_at' => '2026-07-05', 'download_count' => 0],
+            // sha256 computed 2026-08-02 by downloading the live CDN file and hashing it —
+            // this is the current is_latest release, and the desktop client's OTA
+            // updater (UpdateService.js) hard-refuses to download without a valid
+            // sha256, so this one can't be left null like the older, non-latest rows.
+            ['version' => '4.2.1', 'changelog' => 'Fix lỗi đăng nhập và xử lý facebook', 'file_size' => '202 MB', 'released_at' => '2026-07-05', 'download_count' => 0, 'sha256' => '17c8248621be5c34cc7fe2ba3f49f404aa98dff79447bbc374cc97a01fe33a40'],
         ];
 
         foreach ($releases as $i => $r) {
@@ -34,7 +38,7 @@ class ToolSeeder extends Seeder
                 'description' => 'Phần mềm tự động hóa marketing video đa nền tảng CMB Core Marketing.',
                 'download_url' => 'https://cdn.cmbcore.com/cmb-core-marketing/CMBcoreMKT%20Setup%20' . $r['version'] . '.exe',
                 'file_size' => $r['file_size'],
-                'sha256' => null,
+                'sha256' => $r['sha256'] ?? null,
                 'changelog' => $r['changelog'],
                 'is_active' => true,
                 'is_latest' => $i === count($releases) - 1,
