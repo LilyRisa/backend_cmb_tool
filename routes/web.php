@@ -98,10 +98,14 @@ Route::prefix('admin')->name('admin.')->group(function () {
 // Route::fallback) so it satisfies Laravel's route-matching pass directly
 // for whatever verb was requested — this is what keeps a non-GET verb
 // (e.g. DELETE) from tripping Laravel's alternate-verb 405 logic, which a
-// GET-only fallback alone cannot prevent.
+// GET-only fallback alone cannot prevent. CSRF is explicitly excluded: this
+// route runs under web.php's `web` middleware group (which includes
+// VerifyCsrfToken), but it must behave like the stateless /api/* endpoints
+// it's guarding for — without this, a real non-GET request from an API
+// client with no CSRF token gets 419, not 404.
 Route::any('/api/{any}', function () {
     abort(404);
-})->where('any', '.*');
+})->where('any', '.*')->withoutMiddleware(\App\Http\Middleware\VerifyCsrfToken::class);
 
 // User-portal SPA fallback — Route::fallback() (not a Route::get('/{any}')
 // catch-all) so it only fires when NO route matches at dispatch time. This

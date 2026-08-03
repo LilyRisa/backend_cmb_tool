@@ -62,4 +62,21 @@ class ToolSpaRouteTest extends TestCase
         $response = $this->deleteJson('/api/this-route-does-not-exist');
         $response->assertStatus(404);
     }
+
+    public function test_unmatched_api_path_route_excludes_csrf_middleware(): void
+    {
+        // Regression guard for a real-world-only failure mode: PHPUnit's
+        // VerifyCsrfToken::runningUnitTests() unconditionally bypasses CSRF
+        // during tests, so a plain HTTP assertion here would pass whether or
+        // not the route is actually CSRF-exempt — it would only catch this
+        // bug in production (419 instead of 404). Assert the exemption
+        // directly against routing config instead.
+        $route = app('router')->getRoutes()->match(
+            \Illuminate\Http\Request::create('/api/this-route-does-not-exist', 'DELETE')
+        );
+        $this->assertContains(
+            \App\Http\Middleware\VerifyCsrfToken::class,
+            $route->excludedMiddleware()
+        );
+    }
 }
