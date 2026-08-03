@@ -14,6 +14,7 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
@@ -23,6 +24,10 @@ class UserController extends Controller
 {
     public function login(Request $request)
     {
+        // Verify Cloudflare Turnstile
+        $turnstileError = $this->verifyTurnstile($request);
+        if ($turnstileError) return $turnstileError;
+
         $request->validate([
             'email' => 'required|email',
             'password' => 'required|string',
@@ -47,6 +52,10 @@ class UserController extends Controller
 
     public function register(Request $request)
     {
+        // Verify Cloudflare Turnstile
+        $turnstileError = $this->verifyTurnstile($request);
+        if ($turnstileError) return $turnstileError;
+
         $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:users',
@@ -387,5 +396,56 @@ class UserController extends Controller
         } catch (\Exception $e) {
             Log::error('Failed to send verification email: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Verify Cloudflare Turnstile token.
+     * Returns null if valid, or JsonResponse if invalid.
+     */
+    private function verifyTurnstile(Request $request): ?\Illuminate\Http\JsonResponse
+    {
+        $secretKey = config('services.cloudflare_turnstile.secret_key');
+
+        // Skip verification if not configured (dev environment)
+        if (empty($secretKey)) {
+            return null;
+        }
+
+        $token = $request->input('cf_turnstile_token');
+
+        if (empty($token)) {
+            return response()->json([
+                'error' => 'Vui lòng xác thực captcha',
+                'code' => 'turnstile_required',
+            ], 422);
+        }
+
+        try {
+            $response = Http::asForm()->post('https://challenges.cloudflare.com/turnstile/v0/siteverify', [
+                'secret' => $secretKey,
+                'response' => $token,
+                'remoteip' => $request->ip(),
+            ]);
+
+            $result = $response->json();
+
+            if (!($result['success'] ?? false)) {
+                Log::warning('Turnstile verification failed', [
+                    'ip' => $request->ip(),
+                    'error_codes' => $result['error-codes'] ?? [],
+                ]);
+
+                return response()->json([
+                    'error' => 'Xác thực captcha không hợp lệ. Vui lòng thử lại.',
+                    'code' => 'turnstile_failed',
+                ], 422);
+            }
+        } catch (\Exception $e) {
+            Log::error('Turnstile API error: ' . $e->getMessage());
+            // Allow through on API error to not block users
+            return null;
+        }
+
+        return null;
     }
 }

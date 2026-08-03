@@ -43,4 +43,9 @@ return [
         'api_key' => env('OPENROUTER_API_KEY'),
     ],
 
+    'cloudflare_turnstile' => [
+        'site_key' => env('CLOUDFLARE_CAPTCHA_SITE_KEY'),
+        'secret_key' => env('CLOUDFLARE_CAPTCHA_SECRET_KEY'),
+    ],
+
 ];
