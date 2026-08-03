@@ -4,14 +4,14 @@
 
 **Goal:** Move the CMB Core user portal (login, register, OAuth handoff for the desktop app, dashboard, credits, TTS history, referral, topup, bug report, account settings) from the old ESP32 monolith (`G:\esp\ESP32_FULL\laravel`) onto `cmbcoremkt_backend`, served from `mkt.cmbcore.com` — the same domain this backend already serves its API and admin panel from.
 
-**Architecture:** Copy the portal's React SPA source into `cmbcoremkt_backend\resources\js\react`, stripping everything tied to the old monolith's ESP32 device/audio/DSP/playlist features (out of scope for this product). Wire it up with a single new Blade view (`tool-spa.blade.php`) and three new routes plus a catch-all in `routes/web.php`, registered *after* `routes/api.php` so the API is never shadowed. The backend's existing API (`UserController`, `OAuthController`, `/tool/*` routes) already matches what the frontend expects — the only backend behavior gap is server-side Cloudflare Turnstile verification, ported from the old `UserController`. The desktop client is updated last to point at the new domain.
+**Architecture:** Copy the portal's React SPA source into `cmbcoremkt_backend\resources\js\react`, stripping everything tied to the old monolith's ESP32 device/audio/DSP/playlist features (out of scope for this product). Wire it up with a single new Blade view (`tool-spa.blade.php`) and three new routes plus a `Route::fallback()` in `routes/web.php`, guarded so `/api/*` misses stay real 404s instead of being swallowed into the SPA. The backend's existing API (`UserController`, `OAuthController`, `/tool/*` routes) already matches what the frontend expects — the only backend behavior gap is server-side Cloudflare Turnstile verification, ported from the old `UserController`. The desktop client is updated last to point at the new domain.
 
 **Tech Stack:** Laravel 10 (PHP), Vite + `laravel-vite-plugin`, React 19 + `react-router-dom` 7, PHPUnit (`RefreshDatabase`), SCSS (Dart Sass, no Tailwind in the copied styles).
 
 ## Global Constraints
 
-- Single domain (`mkt.cmbcore.com`), no `Route::domain()` wrapper — unlike the old monolith. The catch-all route (`/{any}`) must be the **last** line added to `routes/web.php` so it never shadows `/admin/*` or named routes.
-- `RouteServiceProvider::boot()` already registers `routes/api.php` (prefixed `api/`) before `routes/web.php` — this ordering is what makes the catch-all safe for `/api/*` GET routes. Do not reorder this.
+- Single domain (`mkt.cmbcore.com`), no `Route::domain()` wrapper — unlike the old monolith. The catch-all is implemented via `Route::fallback()` (see Task 9) so it never shadows `/admin/*`, named routes, or routes registered after boot.
+- `RouteServiceProvider::boot()` already registers `routes/api.php` (prefixed `api/`) before `routes/web.php`. **This ordering alone is not sufficient to protect `/api/*`** — an `api.php` route whose inline parameter constraint (e.g. `->where('id', '[0-9]+')`) fails to match still falls through to any later `Route::get('/{any}')`-style catch-all, because Laravel considers that route a non-match and keeps scanning. `Route::fallback()` combined with an explicit `request()->is('api/*')` guard (Task 9) is what actually makes `/api/*` safe, not registration order by itself.
 - Exclude **all** ESP32 device/audio/DSP/playlist code from both the copy and the rewritten files — this product has no devices, audio file management, or playlists.
 - This repo has no JS test runner configured (mirrors the sibling `cmb_audio_tool_marketing` project's stated "no automated test framework" posture for its own frontend). Frontend tasks are verified by `diff`/`grep` checks against the known-good source, and by `npm run build` succeeding — not by unit tests. PHP-side changes (routes, controller) get real PHPUnit feature tests.
 - Copy SCSS partials verbatim, including now-unused classes for the dropped audio player (`_player.scss`, `_eq-preserve.scss`) — do not hand-trim.
@@ -859,7 +859,9 @@ git commit -m "Add tool-spa Blade view for the user portal SPA"
 
 **Interfaces:**
 - Consumes: the `tool-spa` view (Task 8).
-- Produces: `GET /`, `GET /login`, `GET /register` render `tool-spa`; any unmatched `GET` path falls back to `tool-spa` via the catch-all.
+- Produces: `GET /`, `GET /login`, `GET /register` render `tool-spa`; any unmatched `GET` path falls back to `tool-spa` via `Route::fallback()`, EXCEPT paths under `/api/*`, which fall back to a plain 404 instead — this is what protects `routes/api.php`'s constrained routes (e.g. `->where('id', '[0-9]+')`) from being swallowed when the constraint fails to match.
+
+> **Revision note (post-implementation):** the first attempt at this task used `Route::get('/{any}', ...)->where('any', '.*')` as originally specified below. A full-suite regression run (Step 5) caught two real breakages this naive catch-all causes, neither of which "api.php loads first" actually prevents: (1) an `api.php` route whose inline `->where('id', '[0-9]+')` constraint fails to match (e.g. a non-numeric id) is treated by Laravel as a non-match and falls through to the catch-all instead of a 404 — breaking `ToolTtsControllerTest`; (2) routes registered on the router after boot (e.g. `MiddlewareTest`'s ad-hoc routes registered in `setUp()`) are shadowed by the catch-all, since Laravel matches in registration order and the catch-all is already in the collection by then. `Route::fallback()` fixes both: it only fires when no route — including ones registered after boot — matches at dispatch time, and an explicit `request()->is('api/*')` guard inside it keeps `/api/*` misses as real 404s instead of SPA HTML. The steps below reflect this corrected approach.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -914,13 +916,19 @@ class ToolSpaRouteTest extends TestCase
         $response = $this->getJson('/api/me');
         $response->assertStatus(401);
     }
+
+    public function test_unmatched_api_path_returns_404_not_spa(): void
+    {
+        $response = $this->getJson('/api/this-route-does-not-exist');
+        $response->assertStatus(404);
+    }
 }
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
 
 Run: `php artisan test --filter=ToolSpaRouteTest`
-Expected: FAIL — `test_root_renders_tool_spa` fails because `/` currently renders `welcome`, not `tool-spa`; `test_login_renders_tool_spa`/`test_register_renders_tool_spa`/`test_unmatched_path_falls_back_to_tool_spa` fail with 404 (routes don't exist yet).
+Expected: FAIL — `test_root_renders_tool_spa` fails because `/` currently renders `welcome`, not `tool-spa`; `test_login_renders_tool_spa`/`test_register_renders_tool_spa`/`test_unmatched_path_falls_back_to_tool_spa` fail with 404 (routes don't exist yet); `test_unmatched_api_path_returns_404_not_spa` already passes at baseline (Laravel's default behavior for a genuinely unmatched path is already 404 — this test exists to catch a regression, not to drive new behavior).
 
 - [ ] **Step 3: Modify `routes/web.php`**
 
@@ -951,30 +959,36 @@ Route::get('/register', function () {
 Then, at the very end of the file (after the `admin` prefix group's closing `});`), add:
 
 ```php
-// User-portal SPA catch-all — must stay last so it never shadows /admin/*
-// or named routes above it. /api/* is registered in a separate route file
-// that RouteServiceProvider loads before this one, so it is never reached
-// by this pattern either.
-Route::get('/{any}', function () {
+// User-portal SPA fallback — Route::fallback() (not a Route::get('/{any}')
+// catch-all) so it only fires when NO route matches at dispatch time. This
+// correctly defers to routes registered after boot (e.g. test helpers that
+// register routes in setUp()), which a plain registration-order catch-all
+// would shadow. The explicit /api/* guard keeps API misses — including an
+// api.php route whose ->where(...) constraint fails to match — as a real
+// 404 instead of swallowing them into the SPA view.
+Route::fallback(function () {
+    if (request()->is('api/*')) {
+        abort(404);
+    }
     return view('tool-spa');
-})->where('any', '.*');
+});
 ```
 
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `php artisan test --filter=ToolSpaRouteTest`
-Expected: PASS, all 6 tests.
+Expected: PASS, all 7 tests.
 
 - [ ] **Step 5: Run the full existing test suite to check for regressions**
 
 Run: `php artisan test`
-Expected: PASS. In particular, confirm `tests/Feature/ExampleTest.php::test_the_application_returns_a_successful_response` (`GET /` → 200) still passes, and `tests/Feature/Auth/OAuthTest.php` (which hits `GET /oauth/callback`, registered before the catch-all) is unaffected.
+Expected: PASS. In particular, confirm `tests/Feature/ExampleTest.php::test_the_application_returns_a_successful_response` (`GET /` → 200), `tests/Feature/Auth/OAuthTest.php` (which hits `GET /oauth/callback`), `tests/Feature/MiddlewareTest.php` (registers routes in `setUp()` — this is exactly the case `Route::fallback()` protects), and `tests/Feature/Tool/ToolTtsControllerTest.php` (has `->where('id', '[0-9]+')`-constrained routes — this is exactly the case the `/api/*` guard protects) all still pass.
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add routes/web.php tests/Feature/ToolSpaRouteTest.php
-git commit -m "Serve the user-portal SPA from / /login /register and a catch-all"
+git commit -m "Serve the user-portal SPA from / /login /register via Route::fallback()"
 ```
 
 ---
