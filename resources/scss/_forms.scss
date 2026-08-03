@@ -1,0 +1,188 @@
+// ============================================================
+// FORMS & INPUTS & MODALS
+// ============================================================
+
+// ── Input Group ──
+.input-glass {
+    background: $surface;
+    border-radius: $radius-md;
+    padding: 10px 16px;
+    border: 1px solid $border;
+    transition: all $ease;
+
+    &:focus-within {
+        background: $surface-hover;
+        border-color: $accent;
+        box-shadow: 0 0 0 3px $accent-glow;
+    }
+
+    label {
+        display: block;
+        font-size: 10px;
+        font-weight: 700;
+        color: $text-muted;
+        margin-bottom: 2px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    input,
+    select,
+    textarea {
+        width: 100%;
+        border: none;
+        background: transparent;
+        font-size: 15px;
+        color: $text-primary;
+        outline: none;
+        padding: 0;
+        font-family: inherit;
+
+        &::placeholder {
+            color: $text-muted;
+        }
+    }
+
+    textarea {
+        resize: vertical;
+        min-height: 60px;
+    }
+}
+
+// Simple flat input
+.form-input {
+    width: 100%;
+    background: $surface;
+    border: 1px solid $border;
+    border-radius: $radius-sm;
+    padding: 10px 16px;
+    color: $text-primary;
+    font-size: 14px;
+    font-family: inherit;
+    outline: none;
+    transition: all $ease;
+
+    &::placeholder {
+        color: $text-muted;
+    }
+
+    &:focus {
+        border-color: $accent;
+        box-shadow: 0 0 0 3px $accent-glow;
+    }
+}
+
+// ── Modal ──
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 20px;
+    animation: fadeIn 0.2s ease;
+}
+
+.modal-glass {
+    background: rgba(20, 20, 30, 0.95);
+    backdrop-filter: blur(25px);
+    -webkit-backdrop-filter: blur(25px);
+    border: 1px solid $border;
+    border-radius: $radius-xl;
+    box-shadow: $shadow-lg;
+    width: 100%;
+    max-width: 480px;
+    animation: slideUp 0.3s ease;
+
+    &__header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 24px 28px 16px;
+        border-bottom: 1px solid $border;
+    }
+
+    &__title {
+        font-size: 18px;
+        font-weight: 700;
+        color: $text-primary;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    &__close {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: $surface;
+        border: none;
+        color: $text-secondary;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all $ease;
+
+        &:hover {
+            background: rgba($danger, 0.15);
+            color: $danger;
+        }
+    }
+
+    &__body {
+        padding: 20px 28px;
+    }
+
+    &__footer {
+        padding: 16px 28px 24px;
+        display: flex;
+        gap: 12px;
+        justify-content: flex-end;
+    }
+}
+
+// ── Form Group ──
+.form-group {
+    margin-bottom: 16px;
+
+    &:last-child {
+        margin-bottom: 0;
+    }
+
+    label {
+        display: block;
+        font-size: 13px;
+        font-weight: 600;
+        color: $text-secondary;
+        margin-bottom: 6px;
+    }
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(16px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}

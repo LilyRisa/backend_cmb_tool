@@ -1,0 +1,55 @@
+// ============================================================
+// TYPOGRAPHY
+// ============================================================
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+.page-title {
+    font-size: 22px;
+    font-weight: 700;
+    color: $text-primary;
+    letter-spacing: -0.5px;
+    margin: 0;
+
+    i {
+        margin-right: 10px;
+    }
+}
+
+.section-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: $text-primary;
+    margin-bottom: 16px;
+}
+
+.text-accent {
+    color: $accent !important;
+}
+
+.text-success {
+    color: $success !important;
+}
+
+.text-danger {
+    color: $danger !important;
+}
+
+.text-warning {
+    color: $warning !important;
+}
+
+.text-cyan {
+    color: $accent-sec !important;
+}
+
+.text-muted {
+    color: $text-muted !important;
+}
+
+.text-secondary {
+    color: $text-secondary !important;
+}
+
+.text-white {
+    color: $text-primary !important;
+}

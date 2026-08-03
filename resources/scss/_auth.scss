@@ -1,0 +1,162 @@
+// ============================================================
+// AUTH PAGE (Login / Register)
+// ============================================================
+
+.auth-page {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+    background: $bg-primary;
+
+    &__bg {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 0;
+    }
+
+    &__container {
+        position: relative;
+        z-index: 10;
+        width: 100%;
+        max-width: 420px;
+        padding: 20px;
+    }
+
+    &__card {
+        background: rgba(20, 20, 30, 0.85);
+        backdrop-filter: blur(30px);
+        -webkit-backdrop-filter: blur(30px);
+        border: 1px solid $border;
+        border-radius: $radius-xl;
+        padding: 40px 32px;
+        box-shadow: $shadow-lg;
+    }
+
+    &__logo {
+        text-align: center;
+        margin-bottom: 32px;
+
+        &-icon {
+            width: 56px;
+            height: 56px;
+            border-radius: 16px;
+            background: linear-gradient(135deg, $accent, $accent-sec);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            font-weight: 800;
+            color: #fff;
+            margin-bottom: 14px;
+            box-shadow: 0 8px 24px $accent-glow;
+        }
+
+        h2 {
+            font-size: 22px;
+            font-weight: 700;
+            color: $text-primary;
+            margin: 0;
+        }
+
+        p {
+            color: $text-muted;
+            font-size: 14px;
+            margin: 6px 0 0;
+        }
+    }
+
+    &__tabs {
+        display: flex;
+        background: $surface;
+        border-radius: $radius-sm;
+        padding: 4px;
+        margin-bottom: 24px;
+        border: 1px solid $border;
+    }
+
+    &__tab {
+        flex: 1;
+        padding: 10px;
+        text-align: center;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 600;
+        color: $text-muted;
+        cursor: pointer;
+        transition: all $ease;
+        border: none;
+        background: transparent;
+
+        &.active {
+            background: $accent;
+            color: #fff;
+            box-shadow: 0 4px 12px $accent-glow;
+        }
+
+        &:not(.active):hover {
+            color: $text-primary;
+        }
+    }
+
+    &__form {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    &__submit {
+        width: 100%;
+        padding: 12px;
+        background: linear-gradient(135deg, $accent, $accent-light);
+        color: #fff;
+        border: none;
+        border-radius: $radius-sm;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all $ease;
+        margin-top: 8px;
+        box-shadow: 0 4px 16px $accent-glow;
+
+        &:hover {
+            transform: translateY(-1px);
+            filter: brightness(1.1);
+        }
+
+        &:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+    }
+
+    &__footer {
+        text-align: center;
+        margin-top: 12px;
+
+        button {
+            background: none;
+            border: none;
+            color: $text-muted;
+            font-size: 13px;
+            cursor: pointer;
+            transition: color $ease;
+
+            &:hover {
+                color: $accent;
+            }
+        }
+    }
+
+    &__turnstile {
+        display: flex;
+        justify-content: center;
+        margin: 4px 0 12px;
+    }
+}

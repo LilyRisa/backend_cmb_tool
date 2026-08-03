@@ -1,0 +1,41 @@
+// ============================================================
+// DATA TABLES
+// ============================================================
+
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+
+    thead th {
+        font-size: 11px;
+        font-weight: 600;
+        color: $text-muted;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        padding: 12px 16px;
+        border-bottom: 1px solid $border;
+        text-align: left;
+    }
+
+    tbody {
+        td {
+            padding: 12px 16px;
+            border-bottom: 1px solid $border;
+            font-size: 13px;
+            color: $text-secondary;
+            vertical-align: middle;
+        }
+
+        tr {
+            transition: background $ease;
+
+            &:hover {
+                background: $surface-hover;
+            }
+
+            &:last-child td {
+                border-bottom: none;
+            }
+        }
+    }
+}

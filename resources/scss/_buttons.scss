@@ -1,0 +1,135 @@
+// ============================================================
+// BUTTONS
+// ============================================================
+
+// Mixin for base button
+@mixin btn-base {
+    border-radius: $radius-sm;
+    font-weight: 600;
+    font-size: 13px;
+    padding: 8px 20px;
+    cursor: pointer;
+    transition: all $ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border: none;
+    line-height: 1.5;
+
+    &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none !important;
+    }
+}
+
+.btn-primary-glow {
+    @include btn-base;
+    background: linear-gradient(135deg, $accent, $accent-light);
+    color: #fff;
+    box-shadow: 0 4px 16px $accent-glow;
+
+    &:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 8px 24px $accent-glow;
+        filter: brightness(1.1);
+    }
+}
+
+.btn-glass {
+    @include btn-base;
+    background: $surface;
+    border: 1px solid $border;
+    color: $text-secondary;
+    font-weight: 500;
+
+    &:hover {
+        background: $surface-hover;
+        color: $text-primary;
+        border-color: $border-hover;
+    }
+}
+
+.btn-glass-primary {
+    @include btn-base;
+    background: rgba($accent, 0.1);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba($accent, 0.2);
+    color: $accent;
+
+    &:hover {
+        background: rgba($accent, 0.2);
+        border-color: rgba($accent, 0.4);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px $accent-glow;
+        color: $accent-light;
+    }
+}
+
+.btn-glass-danger {
+    @include btn-base;
+    background: rgba($danger, 0.1);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba($danger, 0.2);
+    color: $danger;
+
+    &:hover {
+        background: rgba($danger, 0.2);
+        border-color: rgba($danger, 0.4);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba($danger, 0.25);
+        color: lighten($danger, 10%);
+    }
+}
+
+.btn-glass-secondary {
+    @include btn-base;
+    background: $surface;
+    backdrop-filter: blur(10px);
+    border: 1px solid $border;
+    color: $text-secondary;
+    font-weight: 500;
+
+    &:hover {
+        background: $surface-hover;
+        border-color: $border-hover;
+        color: $text-primary;
+        transform: translateY(-1px);
+    }
+}
+
+.btn-apple {
+    @include btn-base;
+    background: $accent;
+    color: white;
+
+    &:hover {
+        filter: brightness(1.15);
+        transform: translateY(-1px);
+    }
+}
+
+// Icon-only button
+.btn-icon {
+    @include btn-base;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    justify-content: center;
+    border-radius: $radius-sm;
+    background: $surface;
+    border: 1px solid $border;
+    color: $text-secondary;
+
+    &:hover {
+        background: $surface-hover;
+        color: $text-primary;
+        border-color: $border-hover;
+    }
+
+    &.danger:hover {
+        background: rgba($danger, 0.15);
+        color: $danger;
+        border-color: rgba($danger, 0.3);
+    }
+}

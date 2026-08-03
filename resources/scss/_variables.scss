@@ -1,0 +1,48 @@
+// ============================================================
+// DESIGN TOKENS – Dark Premium Theme
+// ============================================================
+
+// ── Colors ──
+$bg-primary: #0a0a0f;
+$bg-secondary: #13131a;
+$bg-tertiary: #1a1a24;
+
+$surface: rgba(255, 255, 255, 0.03);
+$surface-hover: rgba(255, 255, 255, 0.06);
+$surface-active: rgba(255, 255, 255, 0.08);
+
+$border: rgba(255, 255, 255, 0.06);
+$border-hover: rgba(255, 255, 255, 0.12);
+
+$text-primary: #f0f0f5;
+$text-secondary: rgba(255, 255, 255, 0.55);
+$text-muted: rgba(255, 255, 255, 0.35);
+
+$accent: #6366f1;
+$accent-light: #818cf8;
+$accent-glow: rgba(99, 102, 241, 0.25);
+$accent-sec: #06b6d4;
+
+$success: #10b981;
+$warning: #f59e0b;
+$danger: #ef4444;
+
+// ── Radius ──
+$radius-sm: 10px;
+$radius-md: 14px;
+$radius-lg: 20px;
+$radius-xl: 28px;
+
+// ── Shadows ──
+$shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+$shadow-lg: 0 20px 60px rgba(0, 0, 0, 0.5);
+
+// ── Transition ──
+$ease: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+
+// ── Layout ──
+$sidebar-width: 260px;
+$sidebar-collapsed: 72px;
+$mobile-break: 992px;
+$tablet-break: 768px;
+$phone-break: 576px;
