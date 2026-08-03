@@ -10,8 +10,8 @@
 
 ## Global Constraints
 
-- Single domain (`mkt.cmbcore.com`), no `Route::domain()` wrapper — unlike the old monolith. The catch-all is implemented via `Route::fallback()` (see Task 9) so it never shadows `/admin/*`, named routes, or routes registered after boot.
-- `RouteServiceProvider::boot()` already registers `routes/api.php` (prefixed `api/`) before `routes/web.php`. **This ordering alone is not sufficient to protect `/api/*`** — an `api.php` route whose inline parameter constraint (e.g. `->where('id', '[0-9]+')`) fails to match still falls through to any later `Route::get('/{any}')`-style catch-all, because Laravel considers that route a non-match and keeps scanning. `Route::fallback()` combined with an explicit `request()->is('api/*')` guard (Task 9) is what actually makes `/api/*` safe, not registration order by itself.
+- Single domain (`mkt.cmbcore.com`), no `Route::domain()` wrapper — unlike the old monolith. The SPA fallback is implemented via `Route::fallback()` (see Task 9) so it never shadows `/admin/*`, named routes, or routes registered after boot.
+- `RouteServiceProvider::boot()` already registers `routes/api.php` (prefixed `api/`) before `routes/web.php`. **This ordering alone is not sufficient to protect `/api/*`** — an `api.php` route whose inline parameter constraint (e.g. `->where('id', '[0-9]+')`) fails to match still falls through to a later route in `web.php`, because Laravel considers that route a non-match and keeps scanning. Task 9 protects `/api/*` with a dedicated `Route::any('/api/{any}', fn() => abort(404))` rule — not the SPA fallback itself — specifically because `Route::fallback()` is GET-only in Laravel and a GET-only rule alone lets non-GET verbs (POST/PUT/DELETE) on an unmatched `/api/*` path 405 instead of 404 (Laravel's alternate-verb check still counts a GET-only fallback as a structural match). Do not collapse these back into a single `Route::fallback()` with an inline verb guard — that reintroduces the 405 regression for non-GET requests.
 - Exclude **all** ESP32 device/audio/DSP/playlist code from both the copy and the rewritten files — this product has no devices, audio file management, or playlists.
 - This repo has no JS test runner configured (mirrors the sibling `cmb_audio_tool_marketing` project's stated "no automated test framework" posture for its own frontend). Frontend tasks are verified by `diff`/`grep` checks against the known-good source, and by `npm run build` succeeding — not by unit tests. PHP-side changes (routes, controller) get real PHPUnit feature tests.
 - Copy SCSS partials verbatim, including now-unused classes for the dropped audio player (`_player.scss`, `_eq-preserve.scss`) — do not hand-trim.
@@ -859,9 +859,13 @@ git commit -m "Add tool-spa Blade view for the user portal SPA"
 
 **Interfaces:**
 - Consumes: the `tool-spa` view (Task 8).
-- Produces: `GET /`, `GET /login`, `GET /register` render `tool-spa`; any unmatched `GET` path falls back to `tool-spa` via `Route::fallback()`, EXCEPT paths under `/api/*`, which fall back to a plain 404 instead — this is what protects `routes/api.php`'s constrained routes (e.g. `->where('id', '[0-9]+')`) from being swallowed when the constraint fails to match.
+- Produces: `GET /`, `GET /login`, `GET /register` render `tool-spa`; any unmatched `GET` path falls back to `tool-spa` via `Route::fallback()`. Any request under `/api/*` that doesn't match a real `routes/api.php` route — for any HTTP verb, including one whose `->where(...)` constraint fails — gets a plain 404 via a dedicated `Route::any('/api/{any}')` rule, never the SPA view and never a 405.
 
-> **Revision note (post-implementation):** the first attempt at this task used `Route::get('/{any}', ...)->where('any', '.*')` as originally specified below. A full-suite regression run (Step 5) caught two real breakages this naive catch-all causes, neither of which "api.php loads first" actually prevents: (1) an `api.php` route whose inline `->where('id', '[0-9]+')` constraint fails to match (e.g. a non-numeric id) is treated by Laravel as a non-match and falls through to the catch-all instead of a 404 — breaking `ToolTtsControllerTest`; (2) routes registered on the router after boot (e.g. `MiddlewareTest`'s ad-hoc routes registered in `setUp()`) are shadowed by the catch-all, since Laravel matches in registration order and the catch-all is already in the collection by then. `Route::fallback()` fixes both: it only fires when no route — including ones registered after boot — matches at dispatch time, and an explicit `request()->is('api/*')` guard inside it keeps `/api/*` misses as real 404s instead of SPA HTML. The steps below reflect this corrected approach.
+> **Revision note (post-implementation, round 2):** two corrections were needed before this task's route change was regression-free — both surfaced by the implementer's own full-suite runs, not guessed in advance.
+>
+> **Round 1 finding:** the first attempt used `Route::get('/{any}', ...)->where('any', '.*')` as originally specified below. This broke two things "api.php loads first" doesn't actually prevent: (1) an `api.php` route whose inline `->where('id', '[0-9]+')` constraint fails to match (e.g. a non-numeric id) is a non-match, and the request falls through to the catch-all instead of a 404 — breaking `ToolTtsControllerTest`; (2) routes registered on the router after boot (`MiddlewareTest`'s ad-hoc routes in `setUp()`) are shadowed by the catch-all, since Laravel matches in registration order. Switching to `Route::fallback()` (which only fires when no route — including ones registered after boot — matches at dispatch time) fixed both, for GET requests.
+>
+> **Round 2 finding:** `Route::fallback()` is hardcoded GET-only in Laravel. For a non-GET request whose only structural URI match anywhere in the app is that GET-only fallback (e.g. `DELETE /api/tool/tts/history/not-a-number`, where the real `->where('id', '[0-9]+')`-constrained DELETE route in `api.php` doesn't match), Laravel's `checkForAlternateVerbs()` sees "GET would work here" (the fallback still counts structurally, even though it's deprioritized) and throws a 405 instead of a 404 — the `/api/*` guard inside the fallback closure never runs, since it only executes when the fallback route is actually dispatched (GET only). The fix: register a separate, ordinary (non-fallback) `Route::any('/api/{any}')` rule that returns 404 for every verb, placed after all of `routes/api.php`'s real routes (so genuine, constraint-satisfying API calls still win) but before the SPA fallback. Because it's a normal route matching every verb, it satisfies Laravel's matching pass directly for any HTTP verb on an unmatched `/api/*` path — the alternate-verb 405 codepath never triggers, since a match is always found on the first pass. The steps below reflect this fully corrected approach.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -922,13 +926,23 @@ class ToolSpaRouteTest extends TestCase
         $response = $this->getJson('/api/this-route-does-not-exist');
         $response->assertStatus(404);
     }
+
+    public function test_unmatched_api_path_returns_404_for_non_get_verbs(): void
+    {
+        // Regression guard for a GET-only Route::fallback(): a DELETE (or any
+        // non-GET verb) to an unmatched /api/* path must still 404, not 405 —
+        // 405 would mean Laravel's alternate-verb check is treating the SPA
+        // fallback as a structural match for this URI.
+        $response = $this->deleteJson('/api/this-route-does-not-exist');
+        $response->assertStatus(404);
+    }
 }
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
 
 Run: `php artisan test --filter=ToolSpaRouteTest`
-Expected: FAIL — `test_root_renders_tool_spa` fails because `/` currently renders `welcome`, not `tool-spa`; `test_login_renders_tool_spa`/`test_register_renders_tool_spa`/`test_unmatched_path_falls_back_to_tool_spa` fail with 404 (routes don't exist yet); `test_unmatched_api_path_returns_404_not_spa` already passes at baseline (Laravel's default behavior for a genuinely unmatched path is already 404 — this test exists to catch a regression, not to drive new behavior).
+Expected: FAIL — `test_root_renders_tool_spa` fails because `/` currently renders `welcome`, not `tool-spa`; `test_login_renders_tool_spa`/`test_register_renders_tool_spa`/`test_unmatched_path_falls_back_to_tool_spa` fail with 404 (routes don't exist yet); `test_unmatched_api_path_returns_404_not_spa` and `test_unmatched_api_path_returns_404_for_non_get_verbs` already pass at baseline (Laravel's default behavior for a genuinely unmatched path is already 404 for any verb — both tests exist to catch a regression, not to drive new behavior).
 
 - [ ] **Step 3: Modify `routes/web.php`**
 
@@ -959,17 +973,28 @@ Route::get('/register', function () {
 Then, at the very end of the file (after the `admin` prefix group's closing `});`), add:
 
 ```php
+// Any /api/* request that doesn't match a real routes/api.php route — either
+// because no such path exists, or because it exists but an inline
+// ->where(...) constraint rejected the input (e.g. a non-numeric {id}) —
+// returns a plain 404, for every HTTP verb. Registered here so it's only
+// ever reached after routes/api.php's own routes have had a chance to match
+// (RouteServiceProvider loads api.php first); an ordinary Route::any (not
+// Route::fallback) so it satisfies Laravel's route-matching pass directly
+// for whatever verb was requested — this is what keeps a non-GET verb
+// (e.g. DELETE) from tripping Laravel's alternate-verb 405 logic, which a
+// GET-only fallback alone cannot prevent.
+Route::any('/api/{any}', function () {
+    abort(404);
+})->where('any', '.*');
+
 // User-portal SPA fallback — Route::fallback() (not a Route::get('/{any}')
 // catch-all) so it only fires when NO route matches at dispatch time. This
 // correctly defers to routes registered after boot (e.g. test helpers that
 // register routes in setUp()), which a plain registration-order catch-all
-// would shadow. The explicit /api/* guard keeps API misses — including an
-// api.php route whose ->where(...) constraint fails to match — as a real
-// 404 instead of swallowing them into the SPA view.
+// would shadow. GET-only is intentional here — serving an HTML page only
+// makes sense for GET; the /api/{any} rule above already handles every
+// verb for the /api/* namespace.
 Route::fallback(function () {
-    if (request()->is('api/*')) {
-        abort(404);
-    }
     return view('tool-spa');
 });
 ```
@@ -977,12 +1002,12 @@ Route::fallback(function () {
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `php artisan test --filter=ToolSpaRouteTest`
-Expected: PASS, all 7 tests.
+Expected: PASS, all 8 tests.
 
 - [ ] **Step 5: Run the full existing test suite to check for regressions**
 
 Run: `php artisan test`
-Expected: PASS. In particular, confirm `tests/Feature/ExampleTest.php::test_the_application_returns_a_successful_response` (`GET /` → 200), `tests/Feature/Auth/OAuthTest.php` (which hits `GET /oauth/callback`), `tests/Feature/MiddlewareTest.php` (registers routes in `setUp()` — this is exactly the case `Route::fallback()` protects), and `tests/Feature/Tool/ToolTtsControllerTest.php` (has `->where('id', '[0-9]+')`-constrained routes — this is exactly the case the `/api/*` guard protects) all still pass.
+Expected: PASS. In particular, confirm `tests/Feature/ExampleTest.php::test_the_application_returns_a_successful_response` (`GET /` → 200), `tests/Feature/Auth/OAuthTest.php` (which hits `GET /oauth/callback`), `tests/Feature/MiddlewareTest.php` (registers routes in `setUp()` — this is exactly the case `Route::fallback()` protects), and `tests/Feature/Tool/ToolTtsControllerTest.php` (has `->where('id', '[0-9]+')`-constrained routes on both GET and DELETE — this is exactly the case the `Route::any('/api/{any}')` rule protects, for every verb) all still pass.
 
 - [ ] **Step 6: Commit**
 
