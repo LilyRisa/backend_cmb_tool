@@ -23,7 +23,15 @@ use Illuminate\Support\Facades\Route;
 */
 
 Route::get('/', function () {
-    return view('welcome');
+    return view('tool-spa');
+});
+
+Route::get('/login', function () {
+    return view('tool-spa');
+});
+
+Route::get('/register', function () {
+    return view('tool-spa');
 });
 
 Route::get('/email/verify/{token}', [UserController::class, 'verifyEmail'])->middleware('throttle:10,1,email-verify');
@@ -79,4 +87,29 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/bug-reports', [BugReportManagementController::class, 'index'])->name('bug-reports.index');
         Route::put('/bug-reports/{id}', [BugReportManagementController::class, 'updateStatus'])->name('bug-reports.update');
     });
+});
+
+// Any /api/* request that doesn't match a real routes/api.php route — either
+// because no such path exists, or because it exists but an inline
+// ->where(...) constraint rejected the input (e.g. a non-numeric {id}) —
+// returns a plain 404, for every HTTP verb. Registered here so it's only
+// ever reached after routes/api.php's own routes have had a chance to match
+// (RouteServiceProvider loads api.php first); an ordinary Route::any (not
+// Route::fallback) so it satisfies Laravel's route-matching pass directly
+// for whatever verb was requested — this is what keeps a non-GET verb
+// (e.g. DELETE) from tripping Laravel's alternate-verb 405 logic, which a
+// GET-only fallback alone cannot prevent.
+Route::any('/api/{any}', function () {
+    abort(404);
+})->where('any', '.*');
+
+// User-portal SPA fallback — Route::fallback() (not a Route::get('/{any}')
+// catch-all) so it only fires when NO route matches at dispatch time. This
+// correctly defers to routes registered after boot (e.g. test helpers that
+// register routes in setUp()), which a plain registration-order catch-all
+// would shadow. GET-only is intentional here — serving an HTML page only
+// makes sense for GET; the /api/{any} rule above already handles every
+// verb for the /api/* namespace.
+Route::fallback(function () {
+    return view('tool-spa');
 });
