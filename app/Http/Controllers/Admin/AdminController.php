@@ -72,7 +72,7 @@ class AdminController extends Controller
         $today = Carbon::today();
 
         $totalUsers = User::count();
-        $premiumUsers = User::where('package_type', '!=', 'free')->count();
+        $premiumUsers = User::currentlyPremium()->count();
         $newUsersToday = User::whereDate('created_at', $today)->count();
 
         return view('admin.dashboard', compact('totalUsers', 'premiumUsers', 'newUsersToday'));

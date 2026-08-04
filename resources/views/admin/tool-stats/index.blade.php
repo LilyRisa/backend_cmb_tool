@@ -99,9 +99,13 @@
                                 <small class="text-muted">{{ $u->email }}</small>
                             </td>
                             <td>
-                                <span class="badge bg-{{ $u->package_type === 'premium' ? 'success' : ($u->package_type === 'enterprise' ? 'primary' : 'secondary') }}">
-                                    {{ ucfirst($u->package_type ?? 'free') }}
+                                @if(!$u->isPremium())
+                                <span class="badge bg-secondary">{{ $u->package_type === 'free' ? 'Free' : ucfirst($u->package_type) . ' (Hết hạn)' }}</span>
+                                @else
+                                <span class="badge bg-{{ $u->package_type === 'premium' ? 'success' : 'primary' }}">
+                                    {{ ucfirst($u->package_type) }}
                                 </span>
+                                @endif
                             </td>
                             <td>{{ number_format($u->credits) }}</td>
                             <td>{{ number_format($u->total_credits_used ?? 0) }}</td>

@@ -130,6 +130,25 @@ class User extends Authenticatable implements MustVerifyEmail
         return Carbon::parse($this->package_expires_at)->isFuture();
     }
 
+    /**
+     * SQL-level equivalent of isPremium(), for counting/filtering queries
+     * (e.g. admin dashboard stats) where loading full models to call
+     * isPremium() per-row isn't practical. Nothing ever resets package_type
+     * back to 'free' when a subscription naturally lapses — expiry is only
+     * ever reflected in package_expires_at — so any query that checks
+     * package_type alone (`!= 'free'`) overcounts: it still includes users
+     * whose premium expired days ago. Keep this in sync with isPremium()
+     * above if that logic ever changes.
+     */
+    public function scopeCurrentlyPremium($query)
+    {
+        return $query->where('package_type', '!=', 'free')
+            ->where(function ($q) {
+                $q->whereNull('package_expires_at')
+                    ->orWhere('package_expires_at', '>', now());
+            });
+    }
+
     public function deductCredits(int $amount, string $description = '', ?string $refType = null, ?int $refId = null): bool
     {
         return DB::transaction(function () use ($amount, $description, $refType, $refId) {

@@ -32,10 +32,18 @@
                     <tr>
                         <td class="text-muted">Package</td>
                         <td>
-                            <span class="badge bg-{{ $user->package_type === 'premium' ? 'success' : 'secondary' }}">
-                                {{ ucfirst($user->package_type ?? 'free') }}
-                            </span>
+                            @if($user->package_type === 'free')
+                            <span class="badge bg-secondary">Free</span>
+                            @elseif($user->isPremium())
+                            <span class="badge bg-success">{{ ucfirst($user->package_type) }}</span>
+                            @else
+                            <span class="badge bg-secondary" title="package_type vẫn là {{ $user->package_type }} nhưng đã hết hạn (package_expires_at đã qua)">{{ ucfirst($user->package_type) }} (Hết hạn)</span>
+                            @endif
                         </td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Hết hạn gói lúc</td>
+                        <td><small>{{ $user->package_expires_at ? \Carbon\Carbon::parse($user->package_expires_at)->format('d/m/Y H:i') : 'Không giới hạn' }}</small></td>
                     </tr>
                     <tr>
                         <td class="text-muted">Credits (Tổng)</td>

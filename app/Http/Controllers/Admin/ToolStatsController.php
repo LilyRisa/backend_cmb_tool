@@ -22,7 +22,7 @@ class ToolStatsController extends Controller
     public function index(Request $request)
     {
         $totalUsers = User::count();
-        $premiumUsers = User::where('package_type', '!=', 'free')->count();
+        $premiumUsers = User::currentlyPremium()->count();
         $totalTtsRequests = TtsHistory::count();
         $completedTtsRequests = TtsHistory::where('status', 'completed')->count();
 

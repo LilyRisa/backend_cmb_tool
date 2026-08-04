@@ -53,8 +53,10 @@
                         <td>
                             @if($user->package_type === 'free')
                             <span class="badge bg-secondary">Free</span>
-                            @else
+                            @elseif($user->isPremium())
                             <span class="badge bg-warning text-dark">{{ ucfirst($user->package_type) }}</span>
+                            @else
+                            <span class="badge bg-secondary" title="package_type vẫn là {{ $user->package_type }} nhưng đã hết hạn (package_expires_at đã qua)">{{ ucfirst($user->package_type) }} (Hết hạn)</span>
                             @endif
                         </td>
                         <td>
