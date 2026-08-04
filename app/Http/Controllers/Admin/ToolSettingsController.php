@@ -16,6 +16,7 @@ class ToolSettingsController extends Controller
             'image_gen_model' => SystemSetting::getImageGenModel(),
             'image_gen_credits_per_image' => SystemSetting::getImageGenCreditsPerImage(),
             'image_gen_api_key_set' => SystemSetting::getImageGenApiKey() !== null,
+            'genmax_api_key_set' => SystemSetting::getGenMaxApiKey() !== null,
         ];
 
         return view('admin.tool-settings.index', compact('settings'));
@@ -28,6 +29,7 @@ class ToolSettingsController extends Controller
             'image_gen_model' => 'required|string|max:100',
             'image_gen_credits_per_image' => 'required|integer|min:1',
             'image_gen_api_key' => 'nullable|string|max:500',
+            'genmax_api_key' => 'nullable|string|max:500',
         ]);
 
         SystemSetting::setImageGenBaseUrl($request->input('image_gen_base_url'));
@@ -38,6 +40,10 @@ class ToolSettingsController extends Controller
             SystemSetting::setImageGenApiKey($request->input('image_gen_api_key'));
         }
 
-        return redirect()->route('admin.tool-settings.index')->with('success', 'Đã lưu cấu hình tạo hình ảnh.');
+        if ($request->filled('genmax_api_key')) {
+            SystemSetting::setGenMaxApiKey($request->input('genmax_api_key'));
+        }
+
+        return redirect()->route('admin.tool-settings.index')->with('success', 'Đã lưu cấu hình.');
     }
 }
