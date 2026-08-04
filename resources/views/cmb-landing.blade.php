@@ -412,7 +412,7 @@
                 <a href="#pipeline">Quy trình</a>
                 <a href="#features">Tính năng</a>
                 <a href="#why">Vì sao chọn</a>
-                <a href="https://mkt.cmbcore.com/login" class="btn btn-ghost">Đăng nhập</a>
+                <a href="https://mkt.cmbcore.com/login" class="btn btn-ghost" target="_blank" rel="noopener">Đăng nhập</a>
             </div>
         </div>
     </nav>
@@ -430,7 +430,7 @@
 
             <div class="cta-row">
                 <a href="https://cdn.cmbcore.com/cmb-core-marketing/CMBcoreMKT%20Setup%204.2.1.exe" class="btn btn-signal btn-lg">Tải Ngay — v4.2.1 ▸</a>
-                <a href="https://mkt.cmbcore.com/register" class="btn btn-ghost btn-lg">Tạo tài khoản</a>
+                <a href="https://mkt.cmbcore.com/register" class="btn btn-ghost btn-lg" target="_blank" rel="noopener">Tạo tài khoản</a>
             </div>
             <div class="version-line mono">Yêu cầu tài khoản để sử dụng · gói dịch vụ gắn liền với tài khoản</div>
 
@@ -593,7 +593,7 @@
                 <p>Tạo tài khoản, tải phần mềm, và để pipeline chạy phần còn lại.</p>
                 <div class="cta-row">
                     <a href="https://cdn.cmbcore.com/cmb-core-marketing/CMBcoreMKT%20Setup%204.2.1.exe" class="btn btn-signal btn-lg">Tải Ngay — v4.2.1 ▸</a>
-                    <a href="https://mkt.cmbcore.com/register" class="btn btn-ghost btn-lg">Tạo tài khoản miễn phí</a>
+                    <a href="https://mkt.cmbcore.com/register" class="btn btn-ghost btn-lg" target="_blank" rel="noopener">Tạo tài khoản miễn phí</a>
                 </div>
             </div>
         </div>
@@ -611,7 +611,7 @@
                     <ul>
                         <li><a href="#pipeline">Quy trình</a></li>
                         <li><a href="#features">Tính năng</a></li>
-                        <li><a href="https://mkt.cmbcore.com/register">Tạo tài khoản</a></li>
+                        <li><a href="https://mkt.cmbcore.com/register" target="_blank" rel="noopener">Tạo tài khoản</a></li>
                     </ul>
                 </div>
                 <div>

@@ -27,13 +27,12 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-Route::view('/', 'tool-spa');
+// Public marketing homepage — anonymous visitors land here. The logged-in
+// user portal SPA lives at /login, /register, and beyond (see the SPA
+// fallback route below), never at '/'.
+Route::view('/', 'cmb-landing');
 Route::view('/login', 'tool-spa');
 Route::view('/register', 'tool-spa');
-
-// Public marketing landing page for the CMB Core Marketing product itself
-// (distinct from '/' above, which is the logged-in user portal SPA).
-Route::view('/cmb', 'cmb-landing');
 
 Route::get('/email/verify/{token}', [UserController::class, 'verifyEmail'])->middleware('throttle:10,1,email-verify');
 
