@@ -108,6 +108,12 @@
                         </a>
                     </li>
                     <li>
+                        <a class="nav-link {{ request()->routeIs('admin.tool-stats.*') ? 'active' : '' }}"
+                            href="{{ route('admin.tool-stats.index') }}">
+                            <i class="fas fa-chart-bar"></i> Tool Statistics
+                        </a>
+                    </li>
+                    <li>
                         <a class="nav-link {{ request()->routeIs('admin.videodub.*') ? 'active' : '' }}"
                             href="{{ route('admin.videodub.index') }}">
                             <i class="fas fa-language"></i> Video Dub Jobs

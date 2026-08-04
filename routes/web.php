@@ -6,6 +6,7 @@ use App\Http\Controllers\Admin\BugReportManagementController;
 use App\Http\Controllers\Admin\InquiryManagementController;
 use App\Http\Controllers\Admin\ToolManagementController;
 use App\Http\Controllers\Admin\ToolSettingsController;
+use App\Http\Controllers\Admin\ToolStatsController;
 use App\Http\Controllers\Admin\VideoDubManagementController;
 use App\Http\Controllers\API\OAuthController;
 use App\Http\Controllers\API\UserController;
@@ -48,6 +49,11 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
         Route::get('/tool-settings', [ToolSettingsController::class, 'index'])->name('tool-settings.index');
         Route::post('/tool-settings', [ToolSettingsController::class, 'update'])->name('tool-settings.update');
+
+        Route::get('/tool-stats', [ToolStatsController::class, 'index'])->name('tool-stats.index');
+        Route::get('/tool-stats/user/{id}', [ToolStatsController::class, 'userDetail'])->name('tool-stats.user');
+        Route::post('/tool-stats/user/{id}/add-credits', [ToolStatsController::class, 'addCredits'])->name('tool-stats.add-credits');
+        Route::post('/tool-stats/user/{id}/set-premium', [ToolStatsController::class, 'setPremium'])->name('tool-stats.set-premium');
 
         Route::get('/tools', [ToolManagementController::class, 'index'])->name('tools.index');
         Route::get('/tools/create', [ToolManagementController::class, 'create'])->name('tools.create');
