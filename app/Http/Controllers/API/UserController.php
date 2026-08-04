@@ -14,7 +14,6 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
@@ -404,70 +403,17 @@ class UserController extends Controller
      */
     private function verifyTurnstile(Request $request): ?\Illuminate\Http\JsonResponse
     {
-        $siteKey = config('services.cloudflare_turnstile.site_key');
-        $secretKey = config('services.cloudflare_turnstile.secret_key');
+        $error = \App\Services\TurnstileVerificationService::verify(
+            $request->input('cf_turnstile_token'),
+            $request->ip(),
+        );
 
-        $hasSiteKey = !empty($siteKey);
-        $hasSecretKey = !empty($secretKey);
-
-        // Both keys must be set together, or neither. site_key drives whether the
-        // frontend renders the widget at all; secret_key drives whether this
-        // method requires a token. If only secret_key is set, no widget ever
-        // renders, no token can ever arrive, and every login/register would 422
-        // forever — a safe no-op is the only sane behavior for that split-brain
-        // state. Log a warning (not an error — it's a safe no-op) so the
-        // misconfiguration is still visible.
-        if (!$hasSiteKey || !$hasSecretKey) {
-            if ($hasSiteKey !== $hasSecretKey) {
-                Log::warning('Cloudflare Turnstile is partially configured: CLOUDFLARE_CAPTCHA_SITE_KEY and CLOUDFLARE_CAPTCHA_SECRET_KEY must both be set (or both left empty). Verification is disabled until both are set.');
-            }
-
+        if ($error === null) {
             return null;
         }
 
-        $token = $request->input('cf_turnstile_token');
+        $code = $error === 'Vui lòng xác thực captcha' ? 'turnstile_required' : 'turnstile_failed';
 
-        if (empty($token)) {
-            return response()->json([
-                'error' => 'Vui lòng xác thực captcha',
-                'code' => 'turnstile_required',
-            ], 422);
-        }
-
-        try {
-            $response = Http::asForm()->timeout(5)->post('https://challenges.cloudflare.com/turnstile/v0/siteverify', [
-                'secret' => $secretKey,
-                'response' => $token,
-                'remoteip' => $request->ip(),
-            ]);
-
-            if (!$response->successful()) {
-                Log::error('Turnstile API returned a non-successful response', [
-                    'status' => $response->status(),
-                ]);
-                // Allow through on API error to not block users
-                return null;
-            }
-
-            $result = $response->json();
-
-            if (!($result['success'] ?? false)) {
-                Log::warning('Turnstile verification failed', [
-                    'ip' => $request->ip(),
-                    'error_codes' => $result['error-codes'] ?? [],
-                ]);
-
-                return response()->json([
-                    'error' => 'Xác thực captcha không hợp lệ. Vui lòng thử lại.',
-                    'code' => 'turnstile_failed',
-                ], 422);
-            }
-        } catch (\Exception $e) {
-            Log::error('Turnstile API error: ' . $e->getMessage());
-            // Allow through on API error to not block users
-            return null;
-        }
-
-        return null;
+        return response()->json(['error' => $error, 'code' => $code], 422);
     }
 }

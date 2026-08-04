@@ -31,6 +31,15 @@ class AdminController extends Controller
             return back()->withErrors($validator)->withInput();
         }
 
+        $turnstileError = \App\Services\TurnstileVerificationService::verify(
+            $request->input('cf_turnstile_token'),
+            $request->ip(),
+        );
+
+        if ($turnstileError !== null) {
+            return back()->with('error', $turnstileError)->withInput();
+        }
+
         $credentials = $request->only('email', 'password');
 
         if (Auth::attempt($credentials, $request->boolean('remember'))) {
