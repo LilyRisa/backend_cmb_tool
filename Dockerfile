@@ -24,7 +24,26 @@ COPY . .
 # discovery to the entrypoint, where real runtime env vars are present.
 RUN composer dump-autoload --optimize --no-dev --no-scripts
 
-# ---- Stage 2: runtime image (nginx + php-fpm, managed by supervisord) ----
+# ---- Stage 2: build the user-portal SPA frontend (cached independently of PHP code) ----
+# Produces public/build/manifest.json, which resources/views/tool-spa.blade.php's
+# @vite(...) directive requires at render time — without this stage, every request
+# that renders that view (which, via routes/web.php's Route::fallback(), is nearly
+# every non-API request) throws a Vite-manifest exception and 500s.
+FROM node:20-alpine AS frontend
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY vite.config.js ./
+COPY resources/js resources/js
+COPY resources/scss resources/scss
+COPY resources/css resources/css
+
+RUN npm run build
+
+# ---- Stage 3: runtime image (nginx + php-fpm, managed by supervisord) ----
 FROM php:8.2-fpm-alpine
 
 RUN apk add --no-cache \
@@ -46,6 +65,7 @@ RUN apk add --no-cache \
 WORKDIR /var/www/html
 
 COPY --from=vendor /app /var/www/html
+COPY --from=frontend /app/public/build /var/www/html/public/build
 
 COPY docker/nginx.conf /etc/nginx/http.d/default.conf
 COPY docker/php.ini /usr/local/etc/php/conf.d/99-app.ini
