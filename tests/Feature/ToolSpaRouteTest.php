@@ -6,11 +6,11 @@ use Tests\TestCase;
 
 class ToolSpaRouteTest extends TestCase
 {
-    public function test_root_renders_tool_spa(): void
+    public function test_root_renders_public_marketing_homepage(): void
     {
         $response = $this->get('/');
         $response->assertOk();
-        $response->assertViewIs('tool-spa');
+        $response->assertViewIs('cmb-landing');
     }
 
     public function test_login_renders_tool_spa(): void

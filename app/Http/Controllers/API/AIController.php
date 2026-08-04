@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
-use App\Services\GeminiService;
+use App\Services\AiTextService;
 use App\Services\GroqService;
 use App\Services\SrtChunkTranslationService;
 use Illuminate\Http\JsonResponse;
@@ -12,12 +12,12 @@ use Illuminate\Http\Request;
 class AIController extends Controller
 {
     protected GroqService $groq;
-    protected GeminiService $gemini;
+    protected AiTextService $aiText;
 
-    public function __construct(GroqService $groq, GeminiService $gemini)
+    public function __construct(GroqService $groq, AiTextService $aiText)
     {
         $this->groq = $groq;
-        $this->gemini = $gemini;
+        $this->aiText = $aiText;
     }
 
     public function transcribe(Request $request): JsonResponse
@@ -67,10 +67,10 @@ class AIController extends Controller
                 $translated = $chunkTranslator->translate(
                     $request->input('text'),
                     $request->input('target_language'),
-                    fn(string $chunk, string $lang, string $context = '') => $this->gemini->translate($chunk, $lang, 'srt', $context)
+                    fn(string $chunk, string $lang, string $context = '') => $this->aiText->translate($chunk, $lang, 'srt', $context)
                 );
             } else {
-                $translated = $this->gemini->translate(
+                $translated = $this->aiText->translate(
                     $request->input('text'),
                     $request->input('target_language'),
                     $request->input('format')

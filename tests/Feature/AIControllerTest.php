@@ -59,8 +59,8 @@ class AIControllerTest extends TestCase
     public function test_translate_text_format(): void
     {
         Http::fake([
-            'generativelanguage.googleapis.com/*' => Http::response([
-                'candidates' => [['content' => ['parts' => [['text' => 'Xin chào']]]]],
+            'openrouter.ai/*' => Http::response([
+                'choices' => [['message' => ['content' => 'Xin chào']]],
             ], 200),
         ]);
         $user = $this->premiumUser();
@@ -77,8 +77,8 @@ class AIControllerTest extends TestCase
     public function test_translate_srt_format_uses_chunk_translator(): void
     {
         Http::fake([
-            'generativelanguage.googleapis.com/*' => Http::response([
-                'candidates' => [['content' => ['parts' => [['text' => "1\n00:00:01,000 --> 00:00:02,000\nDòng 1"]]]]],
+            'openrouter.ai/*' => Http::response([
+                'choices' => [['message' => ['content' => "1\n00:00:01,000 --> 00:00:02,000\nDòng 1"]]],
             ], 200),
         ]);
         $user = $this->premiumUser();
@@ -123,7 +123,7 @@ class AIControllerTest extends TestCase
 
     public function test_translate_returns_500_on_provider_failure(): void
     {
-        Http::fake(['generativelanguage.googleapis.com/*' => Http::response(['error' => ['message' => 'down']], 500)]);
+        Http::fake(['openrouter.ai/*' => Http::response(['error' => ['message' => 'down']], 500)]);
         $user = $this->premiumUser();
 
         $this->withHeaders($this->authHeader($user))->postJson('/api/translate', [

@@ -48,6 +48,40 @@ class SystemSetting extends Model
         return (int) static::getValue('premium_monthly_credits', 5000);
     }
 
+    public static function getAiTextBaseUrl(): string
+    {
+        return static::getValue('ai_text_base_url', 'https://openrouter.ai/api/v1');
+    }
+
+    public static function setAiTextBaseUrl(string $url): static
+    {
+        return static::setValue('ai_text_base_url', $url, false, 'AI Text Provider Base URL (script/scene/translate)');
+    }
+
+    public static function getAiTextModel(): string
+    {
+        return static::getValue('ai_text_model', '~google/gemini-flash-latest');
+    }
+
+    public static function setAiTextModel(string $model): static
+    {
+        return static::setValue('ai_text_model', $model, false, 'AI Text Provider Model (script/scene/translate)');
+    }
+
+    public static function getAiTextApiKey(): ?string
+    {
+        $key = static::getValue('ai_text_api_key');
+
+        // Falls back to the pre-migration env var so existing deployments keep
+        // working until an admin sets this in Admin > Tool Settings.
+        return ($key !== null && $key !== '') ? $key : config('services.openrouter.api_key');
+    }
+
+    public static function setAiTextApiKey(string $apiKey): static
+    {
+        return static::setValue('ai_text_api_key', $apiKey, true, 'AI Text Provider API Key (script/scene/translate)');
+    }
+
     public static function getGenMaxApiKey(): ?string
     {
         return static::getValue('genmax_api_key');

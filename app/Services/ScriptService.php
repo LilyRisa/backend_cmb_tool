@@ -2,14 +2,11 @@
 
 namespace App\Services;
 
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 /**
- * ScriptService — generates short-video scripts via OpenRouter (Gemini model).
- *
- * Architecture:
- *   Controller -> ScriptService -> OpenRouter API (google/gemini-2.0-flash-001)
+ * ScriptService — generates short-video scripts via the admin-configured
+ * AI text provider (see AiTextService / Admin > Tool Settings).
  *
  * Key features:
  *   - Auto-calculates word count from video duration (2-3 words/second)
@@ -20,9 +17,7 @@ use Illuminate\Support\Facades\Log;
  */
 class ScriptService
 {
-    protected string $apiKey;
-    protected string $baseUrl = 'https://openrouter.ai/api/v1';
-    protected string $model   = 'google/gemini-2.0-flash-001';
+    protected AiTextService $aiText;
 
     private const WORDS_PER_SECOND_LOW  = 2;
     private const WORDS_PER_SECOND_HIGH = 3;
@@ -31,9 +26,9 @@ class ScriptService
     private const RETRY_DELAY  = 2;
     private const PREVIOUS_CONTEXT_WORDS = 50;
 
-    public function __construct()
+    public function __construct(AiTextService $aiText)
     {
-        $this->apiKey = config('services.openrouter.api_key');
+        $this->aiText = $aiText;
     }
 
     public function generate(
@@ -285,15 +280,15 @@ PROMPT;
 
         for ($attempt = 1; $attempt <= self::MAX_RETRIES; $attempt++) {
             try {
-                return $this->callOpenRouter($prompt);
+                return $this->aiText->complete($prompt, 0.8);
             // ConnectionException (cURL timeout / DNS / connection reset) is NOT a
             // RuntimeException subclass — without it here, a timed-out call escapes
             // the retry loop on the first attempt and surfaces raw "cURL error 28"
-            // text to the user instead of retrying. Matches OpenRouterService.
+            // text to the user instead of retrying.
             } catch (\RuntimeException|\Illuminate\Http\Client\ConnectionException $e) {
                 $lastException = $e;
 
-                Log::warning("ScriptService: OpenRouter attempt {$attempt}/" . self::MAX_RETRIES . " failed", [
+                Log::warning("ScriptService: AI text attempt {$attempt}/" . self::MAX_RETRIES . " failed", [
                     'error' => $e->getMessage(),
                 ]);
 
@@ -308,35 +303,5 @@ PROMPT;
         throw new \RuntimeException(
             'Script generation failed after multiple attempts. Please try again later.'
         );
-    }
-
-    private function callOpenRouter(string $prompt): string
-    {
-        $response = Http::withHeaders([
-            'Authorization' => "Bearer {$this->apiKey}",
-            'HTTP-Referer'  => config('app.url'),
-            'X-Title'       => config('app.name'),
-        ])->timeout(120)->post("{$this->baseUrl}/chat/completions", [
-            'model'    => $this->model,
-            'messages' => [['role' => 'user', 'content' => $prompt]],
-            'temperature' => 0.8,
-        ]);
-
-        if ($response->failed()) {
-            $error = $response->json('error.message', $response->body());
-            Log::error('ScriptService: OpenRouter API error', ['status' => $response->status(), 'error' => $error]);
-            throw new \RuntimeException("OpenRouter API error: {$error}");
-        }
-
-        $result = $response->json('choices.0.message.content');
-
-        if (empty($result)) {
-            throw new \RuntimeException('OpenRouter API returned empty response.');
-        }
-
-        $result = trim($result);
-        $result = preg_replace('/^```(?:\w+)?\n(.*)\n```$/s', '$1', $result);
-
-        return trim($result);
     }
 }

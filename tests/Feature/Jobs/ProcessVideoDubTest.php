@@ -8,7 +8,7 @@ use App\Models\User;
 use App\Models\VideoDubJob;
 use App\Services\GenMaxService;
 use App\Services\GroqService;
-use App\Services\OpenRouterService;
+use App\Services\AiTextService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -59,7 +59,7 @@ class ProcessVideoDubTest extends TestCase
         $path = $this->makeTempAudioFile();
 
         (new ProcessVideoDub($job, $path, 'audio.mp3', $this->params()))
-            ->handle(app(GroqService::class), app(OpenRouterService::class), app(GenMaxService::class));
+            ->handle(app(GroqService::class), app(AiTextService::class), app(GenMaxService::class));
 
         $fresh = $job->fresh();
         $this->assertEquals('tts_pending', $fresh->status);
@@ -80,7 +80,7 @@ class ProcessVideoDubTest extends TestCase
         $path = $this->makeTempAudioFile();
 
         (new ProcessVideoDub($job, $path, 'audio.mp3', $this->params()))
-            ->handle(app(GroqService::class), app(OpenRouterService::class), app(GenMaxService::class));
+            ->handle(app(GroqService::class), app(AiTextService::class), app(GenMaxService::class));
 
         $fresh = $job->fresh();
         $this->assertEquals('failed', $fresh->status);
@@ -100,7 +100,7 @@ class ProcessVideoDubTest extends TestCase
         $path = $this->makeTempAudioFile();
 
         (new ProcessVideoDub($job, $path, 'audio.mp3', $this->params()))
-            ->handle(app(GroqService::class), app(OpenRouterService::class), app(GenMaxService::class));
+            ->handle(app(GroqService::class), app(AiTextService::class), app(GenMaxService::class));
 
         $fresh = $job->fresh();
         $this->assertEquals('failed', $fresh->status);
@@ -120,7 +120,7 @@ class ProcessVideoDubTest extends TestCase
         $path = $this->makeTempAudioFile();
 
         (new ProcessVideoDub($job, $path, 'audio.mp3', $this->params()))
-            ->handle(app(GroqService::class), app(OpenRouterService::class), app(GenMaxService::class));
+            ->handle(app(GroqService::class), app(AiTextService::class), app(GenMaxService::class));
 
         $fresh = $job->fresh();
         $this->assertEquals('failed', $fresh->status);
@@ -145,7 +145,7 @@ class ProcessVideoDubTest extends TestCase
         $this->assertNull($job->fresh()->user);
 
         (new ProcessVideoDub($job, $path, 'audio.mp3', $this->params()))
-            ->handle(app(GroqService::class), app(OpenRouterService::class), app(GenMaxService::class));
+            ->handle(app(GroqService::class), app(AiTextService::class), app(GenMaxService::class));
 
         $fresh = $job->fresh();
         $this->assertEquals('failed', $fresh->status);

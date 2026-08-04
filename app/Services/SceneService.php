@@ -2,15 +2,16 @@
 
 namespace App\Services;
 
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 /**
- * SceneService — splits a full script into visual scenes using Gemini AI.
+ * SceneService — splits a full script into visual scenes using the
+ * admin-configured AI text provider (see AiTextService / Admin > Tool
+ * Settings).
  *
  * Pipeline:
  *   1. Smart chunking (sentence-boundary aware, ~800 words per chunk)
- *   2. Gemini AI extracts scenes from each chunk (grouped visual ideas)
+ *   2. AI extracts scenes from each chunk (grouped visual ideas)
  *   3. Merge scene lists + deduplicate boundary overlaps
  *   4. Post-process: consolidate scenes to match target count
  *   5. Proportional duration calculation to match total_duration
@@ -19,9 +20,7 @@ use Illuminate\Support\Facades\Log;
  */
 class SceneService
 {
-    protected string $apiKey;
-    protected string $baseUrl = 'https://openrouter.ai/api/v1';
-    protected string $model   = 'google/gemini-2.0-flash-001';
+    protected AiTextService $aiText;
 
     private const MAX_WORDS_PER_CHUNK = 800;
     private const OVERLAP_SENTENCES = 2;
@@ -35,9 +34,9 @@ class SceneService
     private const OVERLAP_SIMILARITY_THRESHOLD = 0.5;
     private const CONSOLIDATION_SIMILARITY_THRESHOLD = 0.3;
 
-    public function __construct()
+    public function __construct(AiTextService $aiText)
     {
-        $this->apiKey = config('services.openrouter.api_key');
+        $this->aiText = $aiText;
     }
 
     public function generateScenes(
@@ -496,14 +495,14 @@ PROMPT;
 
         for ($attempt = 1; $attempt <= self::MAX_RETRIES; $attempt++) {
             try {
-                return $this->callOpenRouter($prompt);
+                return $this->aiText->complete($prompt, 0.3);
             // ConnectionException (cURL timeout / DNS / connection reset) is NOT a
             // RuntimeException subclass — without it here, a timed-out call escapes
             // the retry loop on the first attempt and surfaces raw "cURL error 28"
-            // text to the user instead of retrying. Matches OpenRouterService.
+            // text to the user instead of retrying.
             } catch (\RuntimeException|\Illuminate\Http\Client\ConnectionException $e) {
                 $lastException = $e;
-                Log::warning("SceneService: OpenRouter attempt {$attempt}/" . self::MAX_RETRIES . " failed", [
+                Log::warning("SceneService: AI text attempt {$attempt}/" . self::MAX_RETRIES . " failed", [
                     'error' => $e->getMessage(),
                 ]);
                 if ($attempt < self::MAX_RETRIES) {
@@ -515,31 +514,5 @@ PROMPT;
         throw new \RuntimeException(
             'Scene extraction failed after multiple attempts. ' . $lastException?->getMessage()
         );
-    }
-
-    private function callOpenRouter(string $prompt): string
-    {
-        $response = Http::withHeaders([
-            'Authorization' => "Bearer {$this->apiKey}",
-            'HTTP-Referer'  => config('app.url'),
-            'X-Title'       => config('app.name'),
-        ])->timeout(120)->post("{$this->baseUrl}/chat/completions", [
-            'model'    => $this->model,
-            'messages' => [['role' => 'user', 'content' => $prompt]],
-            'temperature' => 0.3,
-        ]);
-
-        if ($response->failed()) {
-            $error = $response->json('error.message', $response->body());
-            throw new \RuntimeException("OpenRouter API error: {$error}");
-        }
-
-        $result = $response->json('choices.0.message.content');
-
-        if (empty($result)) {
-            throw new \RuntimeException('OpenRouter API returned empty response.');
-        }
-
-        return trim($result);
     }
 }

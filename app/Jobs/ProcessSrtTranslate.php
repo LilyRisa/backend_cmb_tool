@@ -3,9 +3,9 @@
 namespace App\Jobs;
 
 use App\Models\SrtTranslateJob;
+use App\Services\AiTextService;
 use App\Services\CreditService;
 use App\Services\GroqService;
-use App\Services\OpenRouterService;
 use App\Services\SrtChunkTranslationService;
 use App\Services\SrtParserService;
 use App\Services\SrtTimeRedistributionService;
@@ -41,7 +41,7 @@ class ProcessSrtTranslate implements ShouldQueue
         $this->params = $params;
     }
 
-    public function handle(GroqService $groq, OpenRouterService $openRouter): void
+    public function handle(GroqService $groq, AiTextService $aiText): void
     {
         $job = $this->translateJob;
         $user = $job->user;
@@ -71,7 +71,7 @@ class ProcessSrtTranslate implements ShouldQueue
             $srtTranslated = $chunkTranslator->translate(
                 $srtOriginal,
                 $this->params['target_language'],
-                fn(string $chunk, string $lang, string $context = '') => $openRouter->translate($chunk, $lang, 'srt', $context)
+                fn(string $chunk, string $lang, string $context = '') => $aiText->translate($chunk, $lang, 'srt', $context)
             );
         } catch (\Throwable $e) {
             Log::error('SrtTranslate translate failed', ['job_id' => $job->id, 'error' => $e->getMessage()]);

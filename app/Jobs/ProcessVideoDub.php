@@ -4,9 +4,9 @@ namespace App\Jobs;
 
 use App\Models\VideoDubJob;
 
+use App\Services\AiTextService;
 use App\Services\GenMaxService;
 use App\Services\GroqService;
-use App\Services\OpenRouterService;
 use App\Services\SrtChunkTranslationService;
 use App\Services\SrtParserService;
 use App\Services\SrtTimeRedistributionService;
@@ -48,7 +48,7 @@ class ProcessVideoDub implements ShouldQueue
 
     public function handle(
         GroqService $groq,
-        OpenRouterService $openRouter,
+        AiTextService $aiText,
         GenMaxService $genMax,
     ): void {
         $job = $this->dubJob;
@@ -90,7 +90,7 @@ class ProcessVideoDub implements ShouldQueue
             $srtTranslated = $chunkTranslator->translate(
                 $srtOriginal,
                 $this->params['target_language'],
-                fn(string $chunk, string $lang, string $context = '') => $openRouter->translate($chunk, $lang, 'srt', $context)
+                fn(string $chunk, string $lang, string $context = '') => $aiText->translate($chunk, $lang, 'srt', $context)
             );
         } catch (\Throwable $e) {
             Log::error('VideoDub translate failed', ['job_id' => $job->id, 'error' => $e->getMessage()]);

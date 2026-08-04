@@ -2,12 +2,21 @@
 
 namespace Tests\Unit;
 
+use App\Services\AiTextService;
 use App\Services\SceneService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class SceneServiceTest extends TestCase
 {
+    use RefreshDatabase;
+
+    private function makeService(): SceneService
+    {
+        return new SceneService(new AiTextService());
+    }
+
     public function test_generate_scenes_returns_scenes_with_proportional_durations(): void
     {
         Http::fake(['openrouter.ai/*' => Http::response([
@@ -18,7 +27,7 @@ class SceneServiceTest extends TestCase
             ])]]],
         ], 200)]);
 
-        $service = new SceneService();
+        $service = $this->makeService();
         $result = $service->generateScenes(
             'A person walks into a bright office. They sit down and open a laptop. The screen shows a big success message.',
             'lạc quan',
@@ -44,7 +53,7 @@ class SceneServiceTest extends TestCase
             ]) . "\n```"]]],
         ], 200)]);
 
-        $service = new SceneService();
+        $service = $this->makeService();
         $result = $service->generateScenes('One scene only.', 'nghiêm túc', 15);
 
         $this->assertEquals(1, $result['total_scenes']);
@@ -55,7 +64,7 @@ class SceneServiceTest extends TestCase
     {
         Http::fake(['openrouter.ai/*' => Http::response(['choices' => [['message' => ['content' => 'not valid json at all']]]], 200)]);
 
-        $service = new SceneService();
+        $service = $this->makeService();
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('AI returned invalid scene data. Please try again.');
@@ -67,7 +76,7 @@ class SceneServiceTest extends TestCase
     {
         Http::fake(['openrouter.ai/*' => Http::response(['error' => ['message' => 'server error']], 500)]);
 
-        $service = new SceneService();
+        $service = $this->makeService();
 
         $this->expectException(\RuntimeException::class);
 
@@ -83,7 +92,7 @@ class SceneServiceTest extends TestCase
             throw new \Illuminate\Http\Client\ConnectionException('Connection timed out');
         });
 
-        $service = new SceneService();
+        $service = $this->makeService();
 
         $this->expectException(\RuntimeException::class);
         // SceneService appends the last exception's own message, unlike ScriptService.

@@ -2,12 +2,21 @@
 
 namespace Tests\Unit;
 
+use App\Services\AiTextService;
 use App\Services\ScriptService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class ScriptServiceTest extends TestCase
 {
+    use RefreshDatabase;
+
+    private function makeService(): ScriptService
+    {
+        return new ScriptService(new AiTextService());
+    }
+
     public function test_generate_returns_single_segment_for_short_script(): void
     {
         Http::fake([
@@ -16,7 +25,7 @@ class ScriptServiceTest extends TestCase
             ], 200),
         ]);
 
-        $service = new ScriptService();
+        $service = $this->makeService();
         $result = $service->generate('cats', 20, 'vui vẻ', 'Tiếng Việt', null);
 
         $this->assertStringContainsString('cats', $result);
@@ -27,7 +36,7 @@ class ScriptServiceTest extends TestCase
     {
         Http::fake(['openrouter.ai/*' => Http::response(['choices' => [['message' => ['content' => 'Generated script text.']]]], 200)]);
 
-        $service = new ScriptService();
+        $service = $this->makeService();
         // duration=60s at 2.5 words/sec average -> ~150 words, still under the 400-word
         // chunking threshold, so this should be a single API call (no outline/merge).
         $service->generate('dogs', null, 'nghiêm túc', 'Tiếng Việt', 60);
@@ -54,7 +63,7 @@ class ScriptServiceTest extends TestCase
             return Http::response(['choices' => [['message' => ['content' => str_repeat('word ', 150)]]]], 200);
         });
 
-        $service = new ScriptService();
+        $service = $this->makeService();
         // 900 target words > 400-word MAX_WORDS_PER_SEGMENT -> chunked path:
         // 1 outline call + 3 segment calls + 1 merge call (3+ segments) = 5 calls.
         $result = $service->generate('space exploration', 900, 'truyền cảm hứng', 'English', null);
@@ -68,7 +77,7 @@ class ScriptServiceTest extends TestCase
     {
         Http::fake(['openrouter.ai/*' => Http::response(['error' => ['message' => 'server error']], 500)]);
 
-        $service = new ScriptService();
+        $service = $this->makeService();
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Script generation failed after multiple attempts. Please try again later.');
@@ -85,7 +94,7 @@ class ScriptServiceTest extends TestCase
             throw new \Illuminate\Http\Client\ConnectionException('Connection timed out');
         });
 
-        $service = new ScriptService();
+        $service = $this->makeService();
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Script generation failed after multiple attempts. Please try again later.');

@@ -2,23 +2,35 @@
 
 namespace App\Services;
 
+use App\Models\SystemSetting;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
-class OpenRouterService
+/**
+ * AiTextService — single admin-configurable entry point for every "send a
+ * prompt, get text back" flow (script/scene generation, text/SRT
+ * translation). Talks to whatever OpenAI-chat-completions-compatible
+ * endpoint is set in Admin > Tool Settings (SystemSetting ai_text_*)
+ * instead of a hardcoded provider/model baked into each caller.
+ */
+class AiTextService
 {
-    protected string $apiKey;
-    protected string $baseUrl = 'https://openrouter.ai/api/v1';
-    protected string $model = 'google/gemini-2.0-flash-001';
+    protected string $baseUrl;
+    protected ?string $apiKey;
+    protected string $model;
 
     public function __construct()
     {
-        $this->apiKey = config('services.openrouter.api_key');
+        $this->baseUrl = SystemSetting::getAiTextBaseUrl();
+        $this->apiKey = SystemSetting::getAiTextApiKey();
+        $this->model = SystemSetting::getAiTextModel();
     }
 
-    public function translate(string $text, string $targetLanguage, string $format = 'text', string $context = ''): string
+    public function complete(string $prompt, float $temperature = 0.3): string
     {
-        $prompt = $this->buildPrompt($text, $targetLanguage, $format, $context);
+        if (empty($this->apiKey)) {
+            throw new \RuntimeException('AI text API key not configured. Please set it in Admin > Tool Settings.');
+        }
 
         try {
             $response = Http::withHeaders([
@@ -28,19 +40,19 @@ class OpenRouterService
             ])->timeout(120)->post("{$this->baseUrl}/chat/completions", [
                 'model' => $this->model,
                 'messages' => [['role' => 'user', 'content' => $prompt]],
-                'temperature' => 0.3,
+                'temperature' => $temperature,
             ]);
 
             if ($response->failed()) {
                 $error = $response->json('error.message', $response->body());
-                Log::error('OpenRouter API error', ['status' => $response->status(), 'error' => $error]);
-                throw new \RuntimeException("OpenRouter API error: {$error}");
+                Log::error('AiTextService: provider error', ['status' => $response->status(), 'error' => $error]);
+                throw new \RuntimeException("AI text provider error: {$error}");
             }
 
             $result = $response->json('choices.0.message.content');
 
             if (empty($result)) {
-                throw new \RuntimeException('OpenRouter API returned empty response.');
+                throw new \RuntimeException('AI text provider returned empty response.');
             }
 
             $result = trim($result);
@@ -48,12 +60,17 @@ class OpenRouterService
 
             return trim($result);
         } catch (\Illuminate\Http\Client\ConnectionException $e) {
-            Log::error('OpenRouter connection error', ['message' => $e->getMessage()]);
-            throw new \RuntimeException('Cannot connect to OpenRouter API. Please try again later.');
+            Log::error('AiTextService: connection error', ['message' => $e->getMessage()]);
+            throw new \RuntimeException('Cannot connect to AI text provider. Please try again later.');
         }
     }
 
-    protected function buildPrompt(string $text, string $targetLanguage, string $format, string $context = ''): string
+    public function translate(string $text, string $targetLanguage, string $format = 'text', string $context = ''): string
+    {
+        return $this->complete($this->buildTranslatePrompt($text, $targetLanguage, $format, $context), 0.3);
+    }
+
+    protected function buildTranslatePrompt(string $text, string $targetLanguage, string $format, string $context = ''): string
     {
         if ($format === 'srt') {
             $prompt = <<<PROMPT

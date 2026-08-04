@@ -6,7 +6,7 @@ use App\Jobs\ProcessSrtTranslate;
 use App\Models\SrtTranslateJob;
 use App\Models\User;
 use App\Services\GroqService;
-use App\Services\OpenRouterService;
+use App\Services\AiTextService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -39,7 +39,7 @@ class ProcessSrtTranslateTest extends TestCase
         $path = $this->makeTempAudioFile();
 
         (new ProcessSrtTranslate($job, $path, 'audio.mp3', ['target_language' => 'vi']))
-            ->handle(app(GroqService::class), app(OpenRouterService::class));
+            ->handle(app(GroqService::class), app(AiTextService::class));
 
         $fresh = $job->fresh();
         $this->assertEquals('completed', $fresh->status);
@@ -59,7 +59,7 @@ class ProcessSrtTranslateTest extends TestCase
         $path = $this->makeTempAudioFile();
 
         (new ProcessSrtTranslate($job, $path, 'audio.mp3', ['target_language' => 'vi']))
-            ->handle(app(GroqService::class), app(OpenRouterService::class));
+            ->handle(app(GroqService::class), app(AiTextService::class));
 
         $fresh = $job->fresh();
         $this->assertEquals('failed', $fresh->status);
@@ -78,7 +78,7 @@ class ProcessSrtTranslateTest extends TestCase
         $path = $this->makeTempAudioFile();
 
         (new ProcessSrtTranslate($job, $path, 'audio.mp3', ['target_language' => 'vi']))
-            ->handle(app(GroqService::class), app(OpenRouterService::class));
+            ->handle(app(GroqService::class), app(AiTextService::class));
 
         $fresh = $job->fresh();
         $this->assertEquals('failed', $fresh->status);
@@ -98,7 +98,7 @@ class ProcessSrtTranslateTest extends TestCase
         $path = $this->makeTempAudioFile();
 
         (new ProcessSrtTranslate($job, $path, 'audio.mp3', ['target_language' => 'vi']))
-            ->handle(app(GroqService::class), app(OpenRouterService::class));
+            ->handle(app(GroqService::class), app(AiTextService::class));
 
         $fresh = $job->fresh();
         $this->assertEquals('failed', $fresh->status);
@@ -124,7 +124,7 @@ class ProcessSrtTranslateTest extends TestCase
         $this->assertNull($job->fresh()->user);
 
         (new ProcessSrtTranslate($job, $path, 'audio.mp3', ['target_language' => 'vi']))
-            ->handle(app(GroqService::class), app(OpenRouterService::class));
+            ->handle(app(GroqService::class), app(AiTextService::class));
 
         $fresh = $job->fresh();
         $this->assertEquals('failed', $fresh->status);
