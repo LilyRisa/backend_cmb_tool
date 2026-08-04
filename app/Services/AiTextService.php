@@ -70,6 +70,33 @@ class AiTextService
         return $this->complete($this->buildTranslatePrompt($text, $targetLanguage, $format, $context), 0.3);
     }
 
+    /**
+     * Rewrites $text (already in $targetLanguage) so it can be spoken aloud
+     * within $maxSeconds. Used when a dubbing subtitle segment's translation
+     * still doesn't fit its time window after SrtTimeRedistributionService has
+     * exhausted timestamp-borrowing — the last resort before either an
+     * unnaturally long segment or desynced audio.
+     */
+    public function condenseToFit(string $text, string $targetLanguage, float $maxSeconds): string
+    {
+        $charBudget = (int) floor($maxSeconds * 14);
+
+        $prompt = <<<PROMPT
+The following {$targetLanguage} sentence is dubbing/subtitle text that must be spoken aloud within {$maxSeconds} seconds (roughly {$charBudget} characters at a natural speaking pace). It is currently too long to fit.
+
+Rewrite it to fit within that time budget:
+- Preserve the original meaning as closely as possible.
+- Use natural, conversational {$targetLanguage}, suitable for voice-over narration.
+- Prefer shorter synonyms and cut non-essential words rather than dropping key information.
+- Return ONLY the rewritten sentence — no explanations, no quotes.
+
+Text to shorten:
+{$text}
+PROMPT;
+
+        return $this->complete($prompt, 0.3);
+    }
+
     protected function buildTranslatePrompt(string $text, string $targetLanguage, string $format, string $context = ''): string
     {
         if ($format === 'srt') {

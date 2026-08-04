@@ -29,7 +29,14 @@ class SrtTimeRedistributionService
         $this->maxCps = $maxCps;
     }
 
-    public function redistribute(string $srtContent): string
+    /**
+     * @param callable(string $text, float $availableSeconds): string|null $condenser
+     *   Called only for a segment whose text still doesn't fit its window after
+     *   shrinking/borrowing have done everything they can (e.g. no neighboring
+     *   gaps left to borrow, or the deficit exceeds maxExtendRatio). Must
+     *   return replacement text that fits within $availableSeconds.
+     */
+    public function redistribute(string $srtContent, ?callable $condenser = null): string
     {
         $parser = app(SrtParserService::class);
         $parsed = $parser->parse($srtContent);
@@ -121,6 +128,26 @@ class SrtTimeRedistributionService
                 'shrunk_seconds' => round($totalShrunk, 2),
                 'borrowed_seconds' => round($totalBorrowed, 2),
             ]);
+        }
+
+        if ($condenser !== null) {
+            $totalCondensed = 0;
+
+            for ($i = 0; $i < $n; $i++) {
+                $availableSeconds = $segs[$i]['end'] - $segs[$i]['start'];
+                $stillDeficit = $needed[$i] - $availableSeconds;
+
+                if ($stillDeficit > 0.01) {
+                    $segs[$i]['text'] = $condenser($segs[$i]['text'], $availableSeconds);
+                    $totalCondensed++;
+                }
+            }
+
+            if ($totalCondensed > 0) {
+                Log::info('[SrtRetiming] Condensed segments that still overflowed after redistribution', [
+                    'segments' => $totalCondensed,
+                ]);
+            }
         }
 
         return $this->buildSrt($segs);

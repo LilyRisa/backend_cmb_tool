@@ -101,10 +101,14 @@ class ProcessVideoDub implements ShouldQueue
 
         // ── Step 2.5: Redistribute SRT timing ─────────────────────────
         // Borrow time from neighbouring gaps so longer translated segments
-        // get the extra seconds they need for natural TTS. Non-fatal.
+        // get the extra seconds they need for natural TTS, condensing any
+        // segment that still doesn't fit after borrowing. Non-fatal.
         try {
             $redistributor = app(SrtTimeRedistributionService::class);
-            $srtTranslated = $redistributor->redistribute($srtTranslated);
+            $srtTranslated = $redistributor->redistribute(
+                $srtTranslated,
+                fn(string $text, float $maxSeconds) => $aiText->condenseToFit($text, $this->params['target_language'], $maxSeconds)
+            );
         } catch (\Throwable $e) {
             Log::warning('SRT redistribution skipped', ['job_id' => $job->id, 'error' => $e->getMessage()]);
         }

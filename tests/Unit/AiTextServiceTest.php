@@ -128,4 +128,29 @@ class AiTextServiceTest extends TestCase
             return str_contains($prompt, 'CONTINUITY CONTEXT') && str_contains($prompt, 'previous context here');
         });
     }
+
+    public function test_condense_to_fit_returns_trimmed_text_response(): void
+    {
+        Http::fake([
+            'openrouter.ai/*' => Http::response([
+                'choices' => [['message' => ['content' => '  Câu đã rút gọn  ']]],
+            ], 200),
+        ]);
+
+        $result = (new AiTextService())->condenseToFit('Một câu tiếng Việt rất dài cần được rút ngắn lại', 'vi', 3.5);
+
+        $this->assertEquals('Câu đã rút gọn', $result);
+    }
+
+    public function test_condense_to_fit_includes_duration_and_original_text_in_prompt(): void
+    {
+        Http::fake(['openrouter.ai/*' => Http::response(['choices' => [['message' => ['content' => 'ok']]]], 200)]);
+
+        (new AiTextService())->condenseToFit('văn bản gốc cần rút gọn', 'vi', 3.5);
+
+        Http::assertSent(function ($request) {
+            $prompt = $request->data()['messages'][0]['content'];
+            return str_contains($prompt, '3.5') && str_contains($prompt, 'văn bản gốc cần rút gọn');
+        });
+    }
 }

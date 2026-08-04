@@ -50,6 +50,44 @@ class ProcessSrtTranslateTest extends TestCase
         $this->assertFileDoesNotExist($path);
     }
 
+    public function test_handle_condenses_translated_segment_that_still_overflows_after_redistribution(): void
+    {
+        // A 1-second original segment with no neighbors to borrow slack from --
+        // whatever Vietnamese text the translate step returns here has nowhere
+        // to expand into, so if it's long, redistribute() must hand it to the
+        // condenser rather than just leaving it overflowing.
+        $longVietnamese = trim(str_repeat('từ ', 30));
+
+        Http::fake([
+            'api.groq.com/*' => Http::response([
+                'segments' => [['start' => 0, 'end' => 1, 'text' => 'Hi']],
+            ], 200),
+            'openrouter.ai/*' => function ($request) use ($longVietnamese) {
+                $prompt = json_decode($request->body(), true)['messages'][0]['content'];
+
+                if (str_contains($prompt, 'must be spoken aloud within')) {
+                    return Http::response(['choices' => [['message' => ['content' => 'ngắn']]]], 200);
+                }
+
+                return Http::response([
+                    'choices' => [['message' => ['content' => "1\n00:00:00,000 --> 00:00:01,000\n{$longVietnamese}"]]],
+                ], 200);
+            },
+        ]);
+
+        $user = User::factory()->create(['package_type' => 'premium', 'package_expires_at' => now()->addDays(10), 'monthly_credits' => 1000, 'purchased_credits' => 0, 'credits' => 1000]);
+        $job = SrtTranslateJob::create(['user_id' => $user->id, 'target_language' => 'vi', 'status' => 'queued', 'stage' => 'queued']);
+        $path = $this->makeTempAudioFile();
+
+        (new ProcessSrtTranslate($job, $path, 'audio.mp3', ['target_language' => 'vi']))
+            ->handle(app(GroqService::class), app(AiTextService::class));
+
+        $fresh = $job->fresh();
+        $this->assertEquals('completed', $fresh->status);
+        $this->assertStringContainsString('ngắn', $fresh->srt_translated);
+        $this->assertStringNotContainsString($longVietnamese, $fresh->srt_translated);
+    }
+
     public function test_handle_marks_failed_when_transcription_throws(): void
     {
         Http::fake(['api.groq.com/*' => Http::response(['error' => ['message' => 'bad audio']], 400)]);

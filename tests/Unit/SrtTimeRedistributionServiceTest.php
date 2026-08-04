@@ -83,6 +83,54 @@ class SrtTimeRedistributionServiceTest extends TestCase
         $this->assertGreaterThan(1, $entryCount);
     }
 
+    public function test_redistribute_calls_condenser_when_segment_still_overflows_after_borrowing(): void
+    {
+        $service = new SrtTimeRedistributionService();
+        // Long text (~150 chars, needs ~10.7s @ 14 chars/sec) crammed into a 1s window with
+        // no neighbors to borrow from and maxExtendRatio (1.5x default) capping the extend at
+        // 1.5s -- nowhere near enough, so it must still overflow after the borrow/extend pass.
+        $longText = trim(str_repeat('word ', 30));
+        $srt = "1\n00:00:00,000 --> 00:00:01,000\n{$longText}\n";
+
+        $condenserCalls = [];
+        $result = $service->redistribute($srt, function (string $text, float $maxSeconds) use (&$condenserCalls) {
+            $condenserCalls[] = ['text' => $text, 'maxSeconds' => $maxSeconds];
+            return 'short';
+        });
+
+        $this->assertCount(1, $condenserCalls);
+        $this->assertSame($longText, $condenserCalls[0]['text']);
+        $this->assertGreaterThan(0, $condenserCalls[0]['maxSeconds']);
+        $this->assertStringContainsString('short', $result);
+        $this->assertStringNotContainsString($longText, $result);
+    }
+
+    public function test_redistribute_does_not_call_condenser_when_segment_fits(): void
+    {
+        $service = new SrtTimeRedistributionService();
+        $srt = "1\n00:00:00,000 --> 00:00:04,000\nHello world this is a test\n";
+
+        $called = false;
+        $service->redistribute($srt, function () use (&$called) {
+            $called = true;
+            return 'should not be used';
+        });
+
+        $this->assertFalse($called);
+    }
+
+    public function test_redistribute_without_condenser_argument_still_works(): void
+    {
+        $service = new SrtTimeRedistributionService();
+        $longText = trim(str_repeat('word ', 30));
+        $srt = "1\n00:00:00,000 --> 00:00:01,000\n{$longText}\n";
+
+        // No condenser passed -- segment stays overflowing (over its window), but must not error.
+        $result = $service->redistribute($srt);
+
+        $this->assertStringContainsString($longText, $result);
+    }
+
     public function test_format_timestamp_carries_milliseconds_that_round_to_1000(): void
     {
         $service = new SrtTimeRedistributionService();
