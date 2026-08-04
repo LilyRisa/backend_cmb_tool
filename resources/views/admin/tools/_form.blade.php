@@ -36,7 +36,7 @@
     </div>
     <div class="col-md-6 mb-3">
         <label class="form-label">Released at</label>
-        <input type="date" name="released_at" class="form-control" value="{{ old('released_at', $tool->released_at?->format('Y-m-d') ?? '') }}">
+        <input type="date" name="released_at" class="form-control" value="{{ old('released_at', $tool?->released_at?->format('Y-m-d') ?? '') }}">
     </div>
     <div class="col-12 mb-3">
         <label class="form-label">Description</label>
