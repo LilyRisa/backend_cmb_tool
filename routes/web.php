@@ -9,6 +9,8 @@ use App\Http\Controllers\Admin\ToolSettingsController;
 use App\Http\Controllers\Admin\VideoDubManagementController;
 use App\Http\Controllers\API\OAuthController;
 use App\Http\Controllers\API\UserController;
+use App\Http\Controllers\Api404Controller;
+use App\Http\Controllers\SpaController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -22,17 +24,9 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-Route::get('/', function () {
-    return view('tool-spa');
-});
-
-Route::get('/login', function () {
-    return view('tool-spa');
-});
-
-Route::get('/register', function () {
-    return view('tool-spa');
-});
+Route::view('/', 'tool-spa');
+Route::view('/login', 'tool-spa');
+Route::view('/register', 'tool-spa');
 
 Route::get('/email/verify/{token}', [UserController::class, 'verifyEmail'])->middleware('throttle:10,1,email-verify');
 
@@ -98,14 +92,30 @@ Route::prefix('admin')->name('admin.')->group(function () {
 // Route::fallback) so it satisfies Laravel's route-matching pass directly
 // for whatever verb was requested — this is what keeps a non-GET verb
 // (e.g. DELETE) from tripping Laravel's alternate-verb 405 logic, which a
-// GET-only fallback alone cannot prevent. CSRF is explicitly excluded: this
-// route runs under web.php's `web` middleware group (which includes
-// VerifyCsrfToken), but it must behave like the stateless /api/* endpoints
-// it's guarding for — without this, a real non-GET request from an API
-// client with no CSRF token gets 419, not 404.
-Route::any('/api/{any}', function () {
-    abort(404);
-})->where('any', '.*')->withoutMiddleware(\App\Http\Middleware\VerifyCsrfToken::class);
+// GET-only fallback alone cannot prevent. This route runs under web.php's
+// `web` middleware group, but it must behave like the stateless /api/*
+// endpoints it's guarding for, so the whole session/cookie/CSRF stack is
+// excluded below — not just CSRF. Without VerifyCsrfToken excluded, a real
+// non-GET request from an API client with no CSRF token gets 419, not 404.
+// Without the session/cookie middleware also excluded, every unmatched
+// /api/* hit (routine bot/scanner traffic against /api/<random> included,
+// at any rate — this route has no throttle) would write a session file to
+// disk and set Set-Cookie headers just to return a 404.
+// Side effect worth knowing: because this rule matches every verb, a real,
+// pre-existing /api/* route hit with an unsupported verb (e.g. POST to a
+// GET-only route) now returns 404 instead of Laravel's standard 405 Method
+// Not Allowed, across the entire /api/* surface — not just the new SPA
+// routes. Arguably fine (arguably better — doesn't leak route existence to
+// a prober), but undocumented behavior otherwise.
+Route::any('/api/{any}', Api404Controller::class)
+    ->where('any', '.*')
+    ->withoutMiddleware([
+        \App\Http\Middleware\VerifyCsrfToken::class,
+        \Illuminate\Session\Middleware\StartSession::class,
+        \Illuminate\View\Middleware\ShareErrorsFromSession::class,
+        \Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
+        \App\Http\Middleware\EncryptCookies::class,
+    ]);
 
 // User-portal SPA fallback — Route::fallback() (not a Route::get('/{any}')
 // catch-all) so it only fires when NO route matches at dispatch time. This
@@ -114,6 +124,4 @@ Route::any('/api/{any}', function () {
 // would shadow. GET-only is intentional here — serving an HTML page only
 // makes sense for GET; the /api/{any} rule above already handles every
 // verb for the /api/* namespace.
-Route::fallback(function () {
-    return view('tool-spa');
-});
+Route::fallback(SpaController::class);

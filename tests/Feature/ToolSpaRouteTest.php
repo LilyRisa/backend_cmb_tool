@@ -63,7 +63,7 @@ class ToolSpaRouteTest extends TestCase
         $response->assertStatus(404);
     }
 
-    public function test_unmatched_api_path_route_excludes_csrf_middleware(): void
+    public function test_unmatched_api_path_route_excludes_csrf_and_session_middleware(): void
     {
         // Regression guard for a real-world-only failure mode: PHPUnit's
         // VerifyCsrfToken::runningUnitTests() unconditionally bypasses CSRF
@@ -71,12 +71,42 @@ class ToolSpaRouteTest extends TestCase
         // not the route is actually CSRF-exempt — it would only catch this
         // bug in production (419 instead of 404). Assert the exemption
         // directly against routing config instead.
+        //
+        // This route is registered in routes/web.php, which runs under the
+        // full `web` middleware group (app/Http/Kernel.php) — not just CSRF.
+        // Without excluding session/cookie middleware too, every unmatched
+        // /api/* hit (e.g. routine bot/scanner traffic, unthrottled) would
+        // write a session file to disk and set Set-Cookie headers just to
+        // return a 404. Assert the full exclusion set, not just CSRF.
         $route = app('router')->getRoutes()->match(
             \Illuminate\Http\Request::create('/api/this-route-does-not-exist', 'DELETE')
         );
-        $this->assertContains(
+        $excluded = $route->excludedMiddleware();
+
+        foreach ([
             \App\Http\Middleware\VerifyCsrfToken::class,
-            $route->excludedMiddleware()
-        );
+            \Illuminate\Session\Middleware\StartSession::class,
+            \Illuminate\View\Middleware\ShareErrorsFromSession::class,
+            \Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
+            \App\Http\Middleware\EncryptCookies::class,
+        ] as $middlewareClass) {
+            $this->assertContains($middlewareClass, $excluded);
+        }
+    }
+
+    public function test_route_registered_after_boot_is_not_shadowed_by_the_fallback(): void
+    {
+        // Regression guard for the round-1 bug this migration fixed: a plain
+        // Route::get('/{any}')->where('any', '.*') catch-all matches in
+        // registration order, so it shadows any route added to the router
+        // AFTER application boot (e.g. a route a test registers in setUp()).
+        // Route::fallback() only fires when nothing else matches at dispatch
+        // time, so it correctly defers to routes registered late. Registering
+        // a route here, at test-time (i.e. after boot), and confirming it
+        // still wins is what makes this a real regression guard rather than
+        // something the existing route-order-dependent tests happen to cover
+        // incidentally.
+        \Illuminate\Support\Facades\Route::get('/__late/registered', fn () => response()->json(['ok' => true]));
+        $this->getJson('/__late/registered')->assertOk()->assertJson(['ok' => true]);
     }
 }
