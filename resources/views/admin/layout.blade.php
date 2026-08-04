@@ -63,6 +63,28 @@
                             <i class="fas fa-users"></i> Users
                         </a>
                     </li>
+                    <li>
+                        <a class="nav-link {{ request()->routeIs('admin.analytics.ip*') ? 'active' : '' }}"
+                            href="{{ route('admin.analytics.ip') }}">
+                            <i class="fas fa-chart-line"></i> IP Fraud Detection
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            {{-- Thanh Toán --}}
+            <div class="sidebar-group" data-group="payment">
+                <div class="sidebar-group-title">
+                    <span>💳 Thanh Toán</span>
+                    <i class="fas fa-chevron-down group-chevron"></i>
+                </div>
+                <ul class="sidebar-group-items">
+                    <li>
+                        <a class="nav-link {{ request()->routeIs('admin.analytics.topups') ? 'active' : '' }}"
+                            href="{{ route('admin.analytics.topups') }}">
+                            <i class="fas fa-coins"></i> Credit Top-up
+                        </a>
+                    </li>
                 </ul>
             </div>
 

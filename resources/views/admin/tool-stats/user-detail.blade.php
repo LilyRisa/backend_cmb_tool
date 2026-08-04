@@ -262,6 +262,145 @@
     @endif
 </div>
 
+{{-- Video Dub History --}}
+<div class="card mt-4">
+    <div class="card-header">
+        <i class="fas fa-language me-2"></i>Lịch sử Video Dub
+    </div>
+    <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr>
+                    <th>Thời gian</th>
+                    <th>Ngôn ngữ</th>
+                    <th>Status</th>
+                    <th>Stage</th>
+                    <th class="text-end">Credits</th>
+                    <th>Duration</th>
+                </tr>
+            </thead>
+            <tbody>
+                @forelse($videoDubJobs as $job)
+                <tr>
+                    <td><small>{{ $job->created_at->format('d/m/Y H:i') }}</small></td>
+                    <td><small>{{ $job->source_language ?? '—' }} → {{ $job->target_language ?? '—' }}</small></td>
+                    <td>
+                        @if($job->status === 'completed')
+                        <span class="badge bg-success">Completed</span>
+                        @elseif($job->status === 'processing')
+                        <span class="badge bg-warning text-dark">Processing</span>
+                        @elseif($job->status === 'failed')
+                        <span class="badge bg-danger">Failed</span>
+                        @else
+                        <span class="badge bg-secondary">{{ $job->status }}</span>
+                        @endif
+                    </td>
+                    <td><small>{{ $job->stage ?? '—' }}</small></td>
+                    <td class="text-end">
+                        <span class="badge bg-warning text-dark">{{ number_format($job->credits_deducted ?? 0) }}</span>
+                    </td>
+                    <td><small>{{ $job->duration_seconds ? gmdate('H:i:s', $job->duration_seconds) : '—' }}</small></td>
+                </tr>
+                @empty
+                <tr>
+                    <td colspan="6" class="text-center text-muted py-3">Không có Video Dub jobs</td>
+                </tr>
+                @endforelse
+            </tbody>
+        </table>
+    </div>
+    @if($videoDubJobs->hasPages())
+    <div class="card-footer">
+        {{ $videoDubJobs->appends(['page' => request('page')])->links() }}
+    </div>
+    @endif
+</div>
+
+{{-- Bug Reports --}}
+<div class="card mt-4">
+    <div class="card-header">
+        <i class="fas fa-bug me-2"></i>Báo lỗi đã gửi
+    </div>
+    <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr>
+                    <th>Thời gian</th>
+                    <th>Mô tả lỗi</th>
+                    <th>App Version</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                @forelse($bugReports as $report)
+                <tr>
+                    <td><small>{{ $report->created_at->format('d/m/Y H:i') }}</small></td>
+                    <td style="max-width:300px;">
+                        <small class="text-truncate d-inline-block" style="max-width:280px;" title="{{ $report->description }}">{{ $report->description }}</small>
+                    </td>
+                    <td><small>{{ $report->app_version ?? '—' }}</small></td>
+                    <td>
+                        @if($report->status === 'pending')
+                        <span class="badge bg-warning text-dark">Pending</span>
+                        @elseif($report->status === 'reviewed')
+                        <span class="badge bg-info">Reviewed</span>
+                        @elseif($report->status === 'resolved')
+                        <span class="badge bg-success">Resolved</span>
+                        @else
+                        <span class="badge bg-secondary">{{ $report->status }}</span>
+                        @endif
+                    </td>
+                </tr>
+                @empty
+                <tr>
+                    <td colspan="4" class="text-center text-muted py-3">Không có báo lỗi</td>
+                </tr>
+                @endforelse
+            </tbody>
+        </table>
+    </div>
+    @if($bugReports->hasPages())
+    <div class="card-footer">
+        {{ $bugReports->appends(['page' => request('page')])->links() }}
+    </div>
+    @endif
+</div>
+
+{{-- Feature Usage --}}
+<div class="card mt-4">
+    <div class="card-header">
+        <i class="fas fa-chart-pie me-2"></i>Tần suất sử dụng tính năng
+    </div>
+    <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr>
+                    <th>Feature</th>
+                    <th class="text-end">Lượt dùng</th>
+                    <th>Lần cuối</th>
+                </tr>
+            </thead>
+            <tbody>
+                @forelse($featureUsages as $usage)
+                <tr>
+                    <td style="font-weight:500;">{{ $usage->feature_name }}</td>
+                    <td class="text-end">
+                        <span class="badge bg-primary">{{ number_format($usage->usage_count) }}</span>
+                    </td>
+                    <td>
+                        <small class="text-muted">{{ $usage->last_used_at ? $usage->last_used_at->diffForHumans() : 'N/A' }}</small>
+                    </td>
+                </tr>
+                @empty
+                <tr>
+                    <td colspan="3" class="text-center text-muted py-4">Chưa sử dụng tính năng nào</td>
+                </tr>
+                @endforelse
+            </tbody>
+        </table>
+    </div>
+</div>
+
 <div class="mt-3">
     <a href="{{ route('admin.tool-stats.index') }}" class="btn btn-secondary">
         <i class="fas fa-arrow-left me-2"></i>Quay lại

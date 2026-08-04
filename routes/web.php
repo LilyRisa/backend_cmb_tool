@@ -7,6 +7,7 @@ use App\Http\Controllers\Admin\InquiryManagementController;
 use App\Http\Controllers\Admin\ToolManagementController;
 use App\Http\Controllers\Admin\ToolSettingsController;
 use App\Http\Controllers\Admin\ToolStatsController;
+use App\Http\Controllers\Admin\UserAnalyticsController;
 use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\Admin\VideoDubManagementController;
 use App\Http\Controllers\API\OAuthController;
@@ -50,6 +51,10 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/users/{id}', [UserManagementController::class, 'show'])->name('users.show');
         Route::put('/users/{id}', [UserManagementController::class, 'update'])->name('users.update');
         Route::delete('/users/{id}', [UserManagementController::class, 'destroy'])->name('users.destroy');
+
+        Route::get('/analytics/ip', [UserAnalyticsController::class, 'ipAnalysis'])->name('analytics.ip');
+        Route::get('/analytics/ip/{ip}', [UserAnalyticsController::class, 'ipDetail'])->name('analytics.ip.detail');
+        Route::get('/analytics/topups', [UserAnalyticsController::class, 'topupHistory'])->name('analytics.topups');
 
         Route::get('/videodub', [VideoDubManagementController::class, 'index'])->name('videodub.index');
         Route::get('/videodub/{id}', [VideoDubManagementController::class, 'show'])->name('videodub.show');

@@ -88,6 +88,18 @@ class ToolStatsController extends Controller
             ->limit(50)
             ->get();
 
+        $videoDubJobs = \App\Models\VideoDubJob::where('user_id', $id)
+            ->orderBy('created_at', 'desc')
+            ->paginate(15, ['*'], 'videodub_page');
+
+        $bugReports = \App\Models\BugReport::where('user_id', $id)
+            ->orderBy('created_at', 'desc')
+            ->paginate(15, ['*'], 'bugreport_page');
+
+        $featureUsages = \App\Models\FeatureUsage::where('user_id', $id)
+            ->orderBy('usage_count', 'desc')
+            ->get();
+
         $totalUsed = abs(CreditTransaction::where('user_id', $id)
             ->where('type', CreditTransaction::TYPE_DEDUCT)->sum('amount'));
         $totalTts = TtsHistory::where('user_id', $id)->count();
@@ -98,6 +110,9 @@ class ToolStatsController extends Controller
             'transactions',
             'ttsHistories',
             'loginLogs',
+            'videoDubJobs',
+            'bugReports',
+            'featureUsages',
             'totalUsed',
             'totalTts',
             'completedTts'
