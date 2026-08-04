@@ -50,6 +50,22 @@
                 </ul>
             </div>
 
+            {{-- Người Dùng --}}
+            <div class="sidebar-group" data-group="users">
+                <div class="sidebar-group-title">
+                    <span>👥 Người Dùng</span>
+                    <i class="fas fa-chevron-down group-chevron"></i>
+                </div>
+                <ul class="sidebar-group-items">
+                    <li>
+                        <a class="nav-link {{ request()->routeIs('admin.users.*') ? 'active' : '' }}"
+                            href="{{ route('admin.users.index') }}">
+                            <i class="fas fa-users"></i> Users
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
             {{-- Nội Dung --}}
             <div class="sidebar-group" data-group="content">
                 <div class="sidebar-group-title">
