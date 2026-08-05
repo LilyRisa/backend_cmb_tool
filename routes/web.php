@@ -13,6 +13,7 @@ use App\Http\Controllers\Admin\VideoDubManagementController;
 use App\Http\Controllers\API\OAuthController;
 use App\Http\Controllers\API\UserController;
 use App\Http\Controllers\Api404Controller;
+use App\Http\Controllers\LandingController;
 use App\Http\Controllers\SpaController;
 use Illuminate\Support\Facades\Route;
 
@@ -30,7 +31,7 @@ use Illuminate\Support\Facades\Route;
 // Public marketing homepage — anonymous visitors land here. The logged-in
 // user portal SPA lives at /login, /register, and beyond (see the SPA
 // fallback route below), never at '/'.
-Route::view('/', 'cmb-landing');
+Route::get('/', LandingController::class);
 Route::view('/login', 'tool-spa');
 Route::view('/register', 'tool-spa');
 

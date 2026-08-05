@@ -123,6 +123,13 @@
             background: transparent;
         }
         .btn-ghost:hover { border-color: var(--paper-dimmer); background: var(--panel); }
+        .btn-disabled {
+            border-color: var(--line);
+            color: var(--paper-dim);
+            background: transparent;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
 
         /* ---------- Hero ---------- */
         header.hero { padding: 96px 0 40px; position: relative; }
@@ -429,7 +436,11 @@
             </p>
 
             <div class="cta-row">
-                <a href="https://cdn.cmbcore.com/cmb-core-marketing/CMBcoreMKT%20Setup%204.2.1.exe" class="btn btn-signal btn-lg">Tải Ngay — v4.2.1 ▸</a>
+                @if($latestTool)
+                    <a href="{{ $latestTool->download_url }}" class="btn btn-signal btn-lg">Tải Ngay — v{{ $latestTool->version }} ▸</a>
+                @else
+                    <span class="btn btn-disabled btn-lg" aria-disabled="true">Sắp ra mắt</span>
+                @endif
                 <a href="https://mkt.cmbcore.com/register" class="btn btn-ghost btn-lg" target="_blank" rel="noopener">Tạo tài khoản</a>
             </div>
             <div class="version-line mono">Yêu cầu tài khoản để sử dụng · gói dịch vụ gắn liền với tài khoản</div>
@@ -592,7 +603,11 @@
                 <h2>Sẵn sàng bỏ qua thao tác thủ công?</h2>
                 <p>Tạo tài khoản, tải phần mềm, và để pipeline chạy phần còn lại.</p>
                 <div class="cta-row">
-                    <a href="https://cdn.cmbcore.com/cmb-core-marketing/CMBcoreMKT%20Setup%204.2.1.exe" class="btn btn-signal btn-lg">Tải Ngay — v4.2.1 ▸</a>
+                    @if($latestTool)
+                        <a href="{{ $latestTool->download_url }}" class="btn btn-signal btn-lg">Tải Ngay — v{{ $latestTool->version }} ▸</a>
+                    @else
+                        <span class="btn btn-disabled btn-lg" aria-disabled="true">Sắp ra mắt</span>
+                    @endif
                     <a href="https://mkt.cmbcore.com/register" class="btn btn-ghost btn-lg" target="_blank" rel="noopener">Tạo tài khoản miễn phí</a>
                 </div>
             </div>

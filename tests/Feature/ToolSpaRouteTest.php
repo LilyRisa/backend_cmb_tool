@@ -2,15 +2,47 @@
 
 namespace Tests\Feature;
 
+use App\Models\Tool;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class ToolSpaRouteTest extends TestCase
 {
+    use RefreshDatabase;
+
     public function test_root_renders_public_marketing_homepage(): void
     {
         $response = $this->get('/');
         $response->assertOk();
         $response->assertViewIs('cmb-landing');
+    }
+
+    public function test_homepage_shows_download_link_for_latest_active_tool(): void
+    {
+        $tool = Tool::factory()->create([
+            'type' => 'cmb_core',
+            'version' => '5.1.0',
+            'download_url' => 'https://cdn.cmbcore.com/cmb-core-marketing/CMBcoreMKT-5.1.0.exe',
+            'is_active' => true,
+            'is_latest' => true,
+        ]);
+
+        $response = $this->get('/');
+
+        $response->assertOk();
+        $response->assertViewHas('latestTool', fn ($latestTool) => $latestTool->is($tool));
+        $response->assertSee($tool->download_url, false);
+        $response->assertSee('v5.1.0', false);
+    }
+
+    public function test_homepage_hides_download_link_when_no_latest_tool_exists(): void
+    {
+        $response = $this->get('/');
+
+        $response->assertOk();
+        $response->assertViewHas('latestTool', fn ($latestTool) => $latestTool === null);
+        $response->assertSee('Sắp ra mắt');
+        $response->assertDontSee('.exe', false);
     }
 
     public function test_login_renders_tool_spa(): void
