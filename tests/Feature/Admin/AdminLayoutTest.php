@@ -2,23 +2,21 @@
 
 namespace Tests\Feature\Admin;
 
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class AdminLayoutTest extends TestCase
 {
-    public function test_layout_renders_page_title_and_content(): void
-    {
-        $html = view('admin.dashboard', [
-            'totalUsers' => 1,
-            'premiumUsers' => 1,
-            'newUsersToday' => 1,
-        ])->render();
+    use RefreshDatabase;
 
-        // Existing dashboard view is intentionally untouched (Global
-        // Constraints: minimize blast radius) — this just proves the
-        // rendering pipeline still works after adding the new layout files
-        // alongside it.
-        $this->assertStringContainsString('Admin Dashboard', $html);
+    public function test_dashboard_renders_with_full_stat_and_chart_data(): void
+    {
+        $admin = \App\Models\User::factory()->create(['is_admin' => true]);
+
+        $html = $this->actingAs($admin)->get(route('admin.dashboard'))->getContent();
+
+        $this->assertStringContainsString('Total Users', $html);
+        $this->assertStringContainsString('creditChart', $html);
     }
 
     public function test_breadcrumb_partial_renders_linked_and_current_items(): void
